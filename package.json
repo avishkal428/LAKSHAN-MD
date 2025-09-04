@@ -23,6 +23,8 @@
     "node-fetch": "latest",
     "megajs": "latest",
     "vm": "latest",
-    "qrcode-terminal": "latest"
+    "qrcode-terminal": "latest",
+    "yt-search":"2.13.1",
+    "api-dylux":"1.8.5"
   }
 }
