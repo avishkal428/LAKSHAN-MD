@@ -25,6 +25,6 @@
     "vm": "latest",
     "qrcode-terminal": "latest",
     "yt-search":"2.13.1",
-    "api-dylux":"1.8.5"
+    "api-dylux":"latest"
   }
 }
