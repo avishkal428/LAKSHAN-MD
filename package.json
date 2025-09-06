@@ -23,6 +23,7 @@
     "node-fetch": "latest",
     "megajs": "latest",
     "vm": "latest",
-    "qrcode-terminal": "latest"
+    "qrcode-terminal": "latest",
+    "axios, fs-extra,path,"
   }
 }
