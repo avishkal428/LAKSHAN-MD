@@ -24,6 +24,8 @@
     "megajs": "latest",
     "vm": "latest",
     "qrcode-terminal": "latest",
-    "axios, fs-extra,path,"
+    "axios": "latest",
+    "fs-extra":"latest",
+    "path":"latest"
   }
 }
