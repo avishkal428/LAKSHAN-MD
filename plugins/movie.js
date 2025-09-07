@@ -7,7 +7,7 @@ const config = require('../config');
 
 const API_URL = "https://api.skymansion.site/movies-dl/search";
 const DOWNLOAD_URL = "https://api.skymansion.site/movies-dl/download";
-const API_KEY = sky|801f9a81db6dfac7249964d77fb587eb3df655ab;
+const API_KEY = config.MOVIE_API_KEY;
 
 cmd({
     pattern: "movie",
