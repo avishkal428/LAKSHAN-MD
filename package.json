@@ -26,6 +26,7 @@
     "qrcode-terminal": "latest",
     "axios": "latest",
     "fs-extra":"latest",
-    "path":"latest"
+    "path":"latest",
+    "yt-search":"latest",
   }
 }
