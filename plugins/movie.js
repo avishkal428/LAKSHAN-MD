@@ -1,4 +1,4 @@
-hereconst { cmd } = require('../command');
+const { cmd } = require('../command');
 const { fetchJson } = require('../lib/functions');
 const axios = require('axios');
 const fs = require('fs-extra');
