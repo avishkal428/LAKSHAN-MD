@@ -14,7 +14,7 @@ try{
   *Ram usage:* ${(process.memoryUsage().heapUsed / 1024 / 1204).toFixed(2)}MB / ${Math.round(require('os').totalmem / 1024 / 1204)}MB
   *HostName:* ${os.hostname()}
   *owner:* LIYANAARACHCHI AVISHKA THIMIRA LAKSHAN
- 
+ '
  return  reply('${status}')
 }catch(e){
   console.log(e)
