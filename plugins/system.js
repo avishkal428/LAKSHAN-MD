@@ -12,8 +12,8 @@ cmd({
 },
 async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
     try {
-        // Bot photo URL or local path (https://files.catbox.moe/lkvdvv.jpg)
-        const botPhoto = 'https://i.imgur.com/your-bot-photo.jpg'; // https://files.catbox.moe/lkvdvv.jpg
+        // Bot photo URL
+        const botPhoto = 'https://files.catbox.moe/lkvdvv.jpg'; // ඔබ ලබා දුන් photo link එක
 
         // System status details
         const uptime = runtime(process.uptime());
@@ -22,14 +22,18 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
         const hostname = os.hostname();
         const owner = "LIYANAARACHCHI AVISHKA THIMIRA LAKSHAN";
 
-        // Format the status message
+        // Format the status message with decorative owner name
         const statusMessage = `
 *🤖 Bot System Status 🤖*
 
 *⏰ Uptime:* ${uptime}
 *💾 RAM Usage:* ${ramUsage} MB / ${totalRam} MB
 *🖥️ Hostname:* ${hostname}
-*👑 Owner:* ${owner}
+*👑 Owner:* 
+╔════════════════════╗
+║ ${owner} ║ LIYANAARACHCHI AVISHKA THIMIRA LAKSHAN
+╚════════════════════╝
+
 
 *Powered by xAI* 🚀
         `;
