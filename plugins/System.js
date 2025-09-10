@@ -9,36 +9,42 @@ cmd(
     filename: __filename,
   },
   async (client, m, { react, edit }) => {
-    await react("⚙️");
+    try {
+      // Check if required functions are available
+      if (!react || !edit) {
+        throw new Error("Required bot functions (react/edit) are missing.");
+      }
 
-    // Step-by-step progress updates
-    const progressFrames = [
-      "[□□□□□□□□□□] 0%",
-      "[■■□□□□□□□□] 20%",
-      "[■■■■□□□□□□] 40%",
-      "[■■■■■■□□□□] 60%",
-      "[■■■■■■■■□□] 80%",
-      "[■■■■■■■■■■] 100%",
-    ];
+      await react("⚙️");
 
-    for (let i = 0; i < progressFrames.length; i++) {
-      await edit(`*SYSTEM INFO LOAD වෙමින්...*\n${progressFrames[i]}`);
-      await new Promise((res) => setTimeout(res, 300)); // 300ms delay between steps
-    }
+      // Step-by-step progress updates
+      const progressFrames = [
+        "[□□□□□□□□□□] 0%",
+        "[■■□□□□□□□□] 20%",
+        "[■■■■□□□□□□] 40%",
+        "[■■■■■■□□□□] 60%",
+        "[■■■■■■■■□□] 80%",
+        "[■■■■■■■■■■] 100%",
+      ];
 
-    // Get system details after progress
-    const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
-    const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(2);
-    const usedMem = (totalMem - freeMem).toFixed(2);
+      for (let i = 0; i < progressFrames.length; i++) {
+        await edit(`*SYSTEM INFO LOAD වෙමින්...*\n${progressFrames[i]}`);
+        await new Promise((res) => setTimeout(res, 300)); // 300ms delay
+      }
 
-    const cpuModel = os.cpus()[0].model;
-    const cpuCores = os.cpus().length;
-    const platform = os.platform();
-    const arch = os.arch();
-    const hostname = os.hostname();
-    const uptime = (os.uptime() / 60).toFixed(0);
+      // Get system details after progress
+      const totalMem = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
+      const freeMem = (os.freemem() / 1024 / 1024 / 1024).toFixed(2);
+      const usedMem = (totalMem - freeMem).toFixed(2);
 
-    const systemInfo = `
+      const cpuModel = os.cpus()[0].model;
+      const cpuCores = os.cpus().length;
+      const platform = os.platform();
+      const arch = os.arch();
+      const hostname = os.hostname();
+      const uptime = (os.uptime() / 60).toFixed(0);
+
+      const systemInfo = `
 ╭━━━〔 *SYSTEM INFO* 〕━━━╮
 ┃🖥️ *OS:* ${platform} (${arch})
 ┃💻 *Host:* ${hostname}
@@ -49,6 +55,10 @@ cmd(
 ┃🕒 *System Uptime:* ${uptime} mins
 ╰━━━━━━━━━━━━━━━━━━━━━━╯`;
 
-    await edit(systemInfo);
+      await edit(systemInfo);
+    } catch (error) {
+      console.error("System command error:", error);
+      await edit("❌ Error fetching system info. Check logs.");
+    }
   }
 );
