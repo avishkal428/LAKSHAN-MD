@@ -29,9 +29,9 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
 *⏰ Uptime:* ${uptime}
 *💾 RAM Usage:* ${ramUsage} MB / ${totalRam} MB
 *🖥️ Hostname:* ${hostname}
-*👑 Owner:* 
+*👑 Owner:* Lakshan
 ╔════════════════════╗
-║ ${owner} ║ LIYANAARACHCHI AVISHKA THIMIRA LAKSHAN
+║ ${owner} ║ 
 ╚════════════════════╝
 
 
