@@ -130,12 +130,7 @@ conn.sendFileUrl = async (jid, url, caption, quoted, options = {}) => {
               if (mime.split("/")[0] === "audio") {
                 return conn.sendMessage(jid, { audio: await getBuffer(url), caption: caption, mimetype: 'audio/mpeg', ...options }, { quoted: quoted, ...options })
               }
-            }
-
-async function edit(data) {
-    // edit logic here
-    return true;
-}
+ 
 const events = require('./command')
 const cmdName = isCmd ? body.slice(1).trim().split(" ")[0].toLowerCase() : false;
 if (isCmd) {
