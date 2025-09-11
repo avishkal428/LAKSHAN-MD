@@ -28,7 +28,7 @@ cmd({
 │ ⚙️ *Platform*: ${os.platform()} (${os.arch()})
 │ 🖱️ *CPU*: ${os.cpus()[0]?.model || 'Unknown'}
 │ 🖧 *Hostname*: ${os.hostname()}
-│ 🧑‍💻 *Owner*: Keshara Liyanaarachchi
+│ 🧑‍💻 *Owner*: LAKSHSN
 │
 ╰───────────────────╯
 *𝙲𝙸𝙽𝙴𝚅𝙸𝙱𝙴𝚂 𝙻𝙺 𝙾𝙵𝙵𝙸𝙴𝚎𝚂*`;
