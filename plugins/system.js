@@ -6,7 +6,6 @@ const { runtime } = require('../lib/functions');
 cmd({
     pattern: "system",
     alias: ["status", "botinfo"],
-    react: "🖥️",
     desc: "Displays bot system status including uptime, RAM, CPU, and OS details.",
     category: "main",
     use: ".system",
