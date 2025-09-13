@@ -27,6 +27,7 @@
     "axios": "latest",
     "fs-extra":"latest",
     "path":"latest",
-    "@dark-yasiya/scrap": "latest"
+    "@dark-yasiya/scrap": "latest",
+    "node-fetch":"latest"
   }
 }
