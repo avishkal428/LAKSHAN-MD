@@ -27,6 +27,7 @@
     "axios": "latest",
     "fs-extra":"latest",
     "fs":"latest",
-    "megajs":"latest"
+    "megajs":"latest",
+    "node-cache":"latest"
   }
 }
