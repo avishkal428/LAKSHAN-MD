@@ -28,7 +28,6 @@
     "fs-extra":"latest",
     "fs":"latest",
     "megajs":"latest",
-    "node-cache":"latest",
-    "@dark-yasiya/scrap":"lastest"
+    "node-cache":"latest"
   }
 }
