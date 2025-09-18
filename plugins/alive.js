@@ -1,33 +1,20 @@
 const config = require('../config')
-const { readEnv } = require('../lib/database');
-const { cmd } = require('../command');
-
-// Track bot start time
-const startTime = Date.now();
-
-// Format RAM usage
-function formatRAMUsage() {
-    const used = process.memoryUsage().heapUsed / 1024 / 1024;
-    const total = process.memoryUsage().rss / 1024 / 1024;
-    return ${used.toFixed(2)}MB / ${total.toFixed(0)}MB;
-}
-
-// Format runtime
-function formatRuntime() {
-    const ms = Date.now() - startTime;
-    const minutes = Math.floor(ms / 60000);
-    const seconds = Math.floor(ms / 1000) % 60;
-    return ${minutes} minutes, ${seconds} seconds;
-}
+const {cmd , commands} = require('../command')
 
 cmd({
     pattern: "alive",
-    desc: "Show bot status with a stylish menu",
+    desc: "Check bot online or no.",
     category: "main",
     filename: __filename
 },
-async (conn, mek, m, { from, pushname = 'User', reply, sender }) => {
-    try {
+async(conn, mek, m,{from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply}) => {
+try{
+return await conn.sendMessage(from,{image: {url: config.ALIVE_IMG},caption: config.ALIVE_MSG},{quoted: mek})
+}catch(e){
+console.log(e)
+reply(`${e}`)
+}
+})//-------
         const config = await readEnv();
         if (!config) throw new Error("Missing configuration");
 
@@ -43,7 +30,7 @@ async (conn, mek, m, { from, pushname = 'User', reply, sender }) => {
 *╰──────────●●►*  
 ━━━━━━━━━━━━━━━━━━  
 🔰 *I'M ALIVE AND READY!* 🔰  
-💬 Type *.menu* to see all commands!  
+  
 
 *© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝚀𝚄𝙴𝙴𝙽 𝙶𝙸𝙼𝙸*
 ;
@@ -65,4 +52,3 @@ async (conn, mek, m, { from, pushname = 'User', reply, sender }) => {
         await reply(❌ *Failed to load bot status:* ${e.message || "Error!"});
     }
 });
-
