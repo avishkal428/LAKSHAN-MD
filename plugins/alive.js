@@ -32,9 +32,3 @@ reply(`${e}`)
 🔰 *I'M ALIVE AND READY!* 🔰  
   
 
-*© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝚀𝚄𝙴𝙴𝙽 𝙶𝙸𝙼𝙸*
-;
-        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-        await reply(❌ *Failed to load bot status:* ${e.message || "Error!"});
-    }
-});
