@@ -1,5 +1,5 @@
-const config = require('../config')
-const { cmd, commands } = require('../command')
+const config = require('../config');
+const { cmd, commands } = require('../command');
 
 cmd({
     pattern: "ping",
@@ -16,13 +16,26 @@ async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sen
         const ping = endTime - startTime;
 
         // Edit the initial message to show only the ping time
-        await conn.sendMessage(from, {
-            text: ${ping} ms,
-            edit: message.key // Edit the original "Pinging..." message
-        });
+        await conn.relayMessage(
+            from,
+            {
+                protocolMessage: {
+                    key: message.key,
+                    type: 14, // PROTOCOL_MESSAGE_TYPE.EDIT
+                    editedMessage: {
+                        message: {
+                            extendedTextMessage: {
+                                text: `${ping} ms`
+                            }
+                        }
+                    }
+                }
+            },
+            {}
+        );
 
     } catch (e) {
         console.error("[PING COMMAND ERROR]:", e);
-        await conn.sendMessage(from, { text: ⚠️ Error: ${e.message} }, { quoted: mek });
+        await conn.sendMessage(from, { text: `⚠️ Error: ${e.message}` }, { quoted: mek });
     }
 });
