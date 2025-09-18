@@ -15,7 +15,7 @@ const searchCache = new NodeCache({ stdTTL: 60, checkperiod: 120 });
 // Simplified theme for details card
 const simpleTheme = {
   box: function(title, content) {
-    return `🎬 Movie Hub 🎬\n\n${title}\n\n${content}`;
+    return `ðŸŽ¬ Movie Hub ðŸŽ¬\n\n${title}\n\n${content}`;
   },
   getForwardProps: function() {
     return {
@@ -32,25 +32,8 @@ const simpleTheme = {
       }
     };
   },
-  resultEmojis: ["📽️", "🎥", "🎬", "📽️", "🎞️"]
+  resultEmojis: ["ðŸ“½ï¸", "ðŸŽ¥", "ðŸŽ¬", "ðŸ“½ï¸", "ðŸŽžï¸"]
 };
-const infoMessage = 
-🎭 *${show.name}* (${premieredYear})
-
-▸ ⭐ *Rating:* ${show.rating?.average || 'N/A'} 
-▸ 🕒 *Runtime:* ${show.runtime || 'N/A'} mins
-▸ 📆 *Status:* ${show.status || 'Unknown'}
-▸ 🌐 *Network:* ${show.network?.name || show.webChannel?.name || 'Streaming Platform'}
-▸ 🗓️ *Schedule:* ${show.schedule ? formatSchedule(show.schedule) : 'Not scheduled'}
-▸ 🎭 *Genres:* ${show.genres.join(' ‧ ') || 'N/A'}
-▸ 🌍 *Language:* ${show.language || 'English'}
-
-━━━━━━━━━━━━━━
-📜 *Synopsis:*
-${cleanSummary(show.summary).substring(0, 500)}${show.summary.length > 500 ? '...' : ''}
-
-🔗 *Official Site:* ${show.officialSite || 'Not available'}
-        .trim();
 
 // Temporary file path for downloading
 const tempDir = path.join(__dirname, 'temp');
@@ -151,7 +134,7 @@ async function downloadFromMega(conn, megaUrl, from, qualityMessage, selectedFil
       document: { url: tempFilePath },
       mimetype: file.mimeType || "application/octet-stream",
       fileName: file.name,
-      caption: `🎬 ${selectedFilm.title} (${selectedFilm.year})\n\nQuality: ${selectedLink.quality}\nSize: ${(file.size / (1024 * 1024)).toFixed(2)} MB\n\nDownloaded from MEGA!`,
+      caption: `ðŸŽ¬ ${selectedFilm.title} (${selectedFilm.year})\n\nQuality: ${selectedLink.quality}\nSize: ${(file.size / (1024 * 1024)).toFixed(2)} MB\n\nDownloaded from MEGA!`,
       ...simpleTheme.getForwardProps()
     }, { quoted: qualityMessage });
 
@@ -172,21 +155,21 @@ async function downloadFromMega(conn, megaUrl, from, qualityMessage, selectedFil
         `Sorry, an error occurred:\n\n${e.message || "Unknown error"}\n\nPlease try again later`),
       ...simpleTheme.getForwardProps()
     }, { quoted: qualityMessage });
-    await conn.sendMessage(from, { react: { text: "❌", key: qualityMessage.key } });
+    await conn.sendMessage(from, { react: { text: "âŒ", key: qualityMessage.key } });
   }
 }
 
 // Film search and download command
 cmd({
   pattern: "film3",
-  react: "🎬",
+  react: "ðŸŽ¬",
   desc: "Get Movies from Movie Hub to Enjoy Cinema",
   category: "Movie Hub",
   filename: __filename,
 }, async (conn, mek, m, { from, q, pushname, reply }) => {
   if (!q) {
     return reply(simpleTheme.box("Sinhala Sub Movie", 
-      "Use: .film <film name>\n✨ Ex: .film 2025\nMovie Hub List"));
+      "Use: .film <film name>\nâœ¨ Ex: .film 2025\nMovie Hub List"));
   }
 
   try {
@@ -226,9 +209,9 @@ cmd({
     }
 
     // Step 2: Format movie list
-    let filmList = `sᴜʙ.ʟᴋ ᴍᴏᴠɪᴇ ʀᴇsᴜʟᴛs.\n\n`;
-    filmList += `🔍sᴇᴀʀᴄʜ: ${q}\n\n`;
-    filmList += `⭕.ʀᴇᴘʟʏ ᴡɪᴛʜ ɴᴜᴍʙᴇʀ ᴏғ ᴛʜᴇ ᴍᴏᴠɪᴇ ʏᴏᴜ ᴡᴀɴᴛ:\n\n`;
+    let filmList = `sá´œÊ™.ÊŸá´‹ á´á´á´ Éªá´‡ Ê€á´‡sá´œÊŸá´›s.\n\n`;
+    filmList += `ðŸ”sá´‡á´€Ê€á´„Êœ: ${q}\n\n`;
+    filmList += `â­•.Ê€á´‡á´˜ÊŸÊ á´¡Éªá´›Êœ É´á´œá´Ê™á´‡Ê€ á´Ò“ á´›Êœá´‡ á´á´á´ Éªá´‡ Êá´á´œ á´¡á´€É´á´›:\n\n`;
 
     const films = searchData.slice(0, 10).map((film, index) => ({
       number: index + 1,
@@ -244,7 +227,7 @@ cmd({
       filmList += `${film.number}. ${film.title} (${film.year})\n`;
     });
 
-    filmList += `\n*ᴘᴏᴡᴇᴀʀᴅ ʙʏ ᴛᴄᴄ ᴛᴇᴀᴍ*`;
+    filmList += `\n*á´˜á´á´¡á´‡á´€Ê€á´… Ê™Ê á´›á´„á´„ á´›á´‡á´€á´*`;
 
     // Step 3: Send movie list
     const sentMessage = await conn.sendMessage(from, {
@@ -307,11 +290,11 @@ cmd({
       }
 
       // Step 7: Display details card with high-quality thumbnail
-      let detailsCard = `⚕️*ᴍᴏᴠɪᴇ ᴅᴇᴛᴀɪʟs* ♂\n\n`;
-      detailsCard += `*ᴛɪᴛʟᴇ*: ${details.title}\n`;
-      detailsCard += `*ɪᴍᴅʙ*: ${details.imdb}\n`;
-      detailsCard += `*ᴅᴇsᴄʀɪᴘᴛɪᴏɴ*: ${details.description}\n`;
-      detailsCard += `\n🔗 *ᴍᴏᴠɪᴇ ᴜʀʟ*: ${details.movieUrl}\n`;
+      let detailsCard = `âš•ï¸*á´á´á´ Éªá´‡ á´…á´‡á´›á´€ÉªÊŸs* â™‚\n\n`;
+      detailsCard += `*á´›Éªá´›ÊŸá´‡*: ${details.title}\n`;
+      detailsCard += `*Éªá´á´…Ê™*: ${details.imdb}\n`;
+      detailsCard += `*á´…á´‡sá´„Ê€Éªá´˜á´›Éªá´É´*: ${details.description}\n`;
+      detailsCard += `\nðŸ”— *á´á´á´ Éªá´‡ á´œÊ€ÊŸ*: ${details.movieUrl}\n`;
 
       await conn.sendMessage(from, {
         image: { url: thumbnailUrl },
@@ -351,15 +334,15 @@ cmd({
         url: link.redirectLink
       }));
 
-      let downloadOptions = `📥 *ᴅᴏᴡɴʟᴏᴀᴅ ᴏᴘᴛɪᴏɴ ғᴏʀ ${selectedFilm.title} (${selectedFilm.year})* 📥\n\n`;
-      downloadOptions += `🎬 *ᴀᴠᴀɪʟʙʟᴇ ǫᴜᴀʟɪᴛʏ ʙᴜᴛᴛᴏɴs*:\n\n`;
+      let downloadOptions = `ðŸ“¥ *á´…á´á´¡É´ÊŸá´á´€á´… á´á´˜á´›Éªá´É´ Ò“á´Ê€ ${selectedFilm.title} (${selectedFilm.year})* ðŸ“¥\n\n`;
+      downloadOptions += `ðŸŽ¬ *á´€á´ á´€ÉªÊŸÊ™ÊŸá´‡ Ç«á´œá´€ÊŸÉªá´›Ê Ê™á´œá´›á´›á´É´s*:\n\n`;
 
       downloadLinks.forEach(link => {
         downloadOptions += `${link.number}. ${link.quality} (${link.size}) - Redirect: ${link.url}\n`;
       });
 
-      downloadOptions += `\nʀᴇᴘʟʏ ǫᴜʟʟɪᴛʏ ʙᴜᴛᴛᴏɴs. ᴀғᴛᴇʀ ᴍᴏᴠɪᴇ ᴅᴏᴡɴʟᴏᴀᴅᴇᴅ.`;
-      downloadOptions += `\n*ᴘᴏᴡᴇᴀʀᴅ ʙʏ ᴛᴄᴄ ᴛᴇᴀᴍ.*`;
+      downloadOptions += `\nÊ€á´‡á´˜ÊŸÊ Ç«á´œÊŸÊŸÉªá´›Ê Ê™á´œá´›á´›á´É´s. á´€Ò“á´›á´‡Ê€ á´á´á´ Éªá´‡ á´…á´á´¡É´ÊŸá´á´€á´…á´‡á´….`;
+      downloadOptions += `\n*á´˜á´á´¡á´‡á´€Ê€á´… Ê™Ê á´›á´„á´„ á´›á´‡á´€á´.*`;
 
       const downloadButtonMessage = await conn.sendMessage(from, {
         image: { url: thumbnailUrl },
@@ -481,7 +464,7 @@ cmd({
             document: { url: tempFilePath },
             mimetype: "video/mp4",
             fileName: `${selectedFilm.title.replace(/[^\w\s]/gi, '')}_${selectedLink.quality.replace(/\s+/g, '_')}.mp4`,
-            caption: `🎬 ${selectedFilm.title} (${selectedFilm.year})\n\nǫᴜᴀʟɪᴛʏ: ${selectedLink.quality}\nsɪᴢᴇ: ${selectedLink.size}\n\nᴘᴏᴡᴇᴀʀᴅ ʙʏ ᴛᴄᴄ ᴛᴇᴀᴍ.`,
+            caption: `ðŸŽ¬ ${selectedFilm.title} (${selectedFilm.year})\n\nÇ«á´œá´€ÊŸÉªá´›Ê: ${selectedLink.quality}\nsÉªá´¢á´‡: ${selectedLink.size}\n\ná´˜á´á´¡á´‡á´€Ê€á´… Ê™Ê á´›á´„á´„ á´›á´‡á´€á´.`,
             ...simpleTheme.getForwardProps()
           }, { quoted: qualityMessage });
 
@@ -516,6 +499,6 @@ cmd({
       `Sorry, an error occurred:\n\n${e.message || "Unknown error"}\n\nPlease try again later`);
     
     await reply(errorMsg);
-    await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
+    await conn.sendMessage(from, { react: { text: "âŒ", key: mek.key } });
   }
 });
