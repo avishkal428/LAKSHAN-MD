@@ -34,6 +34,23 @@ const simpleTheme = {
   },
   resultEmojis: ["📽️", "🎥", "🎬", "📽️", "🎞️"]
 };
+const infoMessage = 
+🎭 *${show.name}* (${premieredYear})
+
+▸ ⭐ *Rating:* ${show.rating?.average || 'N/A'} 
+▸ 🕒 *Runtime:* ${show.runtime || 'N/A'} mins
+▸ 📆 *Status:* ${show.status || 'Unknown'}
+▸ 🌐 *Network:* ${show.network?.name || show.webChannel?.name || 'Streaming Platform'}
+▸ 🗓️ *Schedule:* ${show.schedule ? formatSchedule(show.schedule) : 'Not scheduled'}
+▸ 🎭 *Genres:* ${show.genres.join(' ‧ ') || 'N/A'}
+▸ 🌍 *Language:* ${show.language || 'English'}
+
+━━━━━━━━━━━━━━
+📜 *Synopsis:*
+${cleanSummary(show.summary).substring(0, 500)}${show.summary.length > 500 ? '...' : ''}
+
+🔗 *Official Site:* ${show.officialSite || 'Not available'}
+        .trim();
 
 // Temporary file path for downloading
 const tempDir = path.join(__dirname, 'temp');
