@@ -14,7 +14,7 @@ return await conn.sendMessage(from,{image: {url: config.ALIVE_IMG},caption: conf
 console.log(e)
 reply(`${e}`)
 }
-})//-------
+})
         const config = await readEnv();
         if (!config) throw new Error("Missing configuration");
 
@@ -34,20 +34,6 @@ reply(`${e}`)
 
 *© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝚀𝚄𝙴𝙴𝙽 𝙶𝙸𝙼𝙸*
 ;
-
-        const imageUrl = config.MENU_IMAGE_URL || 'https://files.catbox.moe/lkvdvv.jpg';
-        await conn.sendMessage(from, { 
-            image: { url: imageUrl },
-            caption: aliveText,
-            contextInfo: {
-                mentionedJid: [sender]
-            }
-        }, { quoted: mek });
-
-        await conn.sendMessage(from, { react: { text: '✔️', key: mek.key } });
-
-    } catch (e) {
-        console.error("Alive Command Error:", e);
         await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
         await reply(❌ *Failed to load bot status:* ${e.message || "Error!"});
     }
