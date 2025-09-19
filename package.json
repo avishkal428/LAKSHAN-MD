@@ -28,7 +28,6 @@
     "fs-extra":"latest",
     "fs":"latest",
     "megajs":"latest",
-    "node-cache":"latest",
-    "abot-scraper":"lastest"
+    "node-cache":"latest"
   }
 }
