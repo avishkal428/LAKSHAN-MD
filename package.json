@@ -28,6 +28,8 @@
     "fs-extra":"latest",
     "fs":"latest",
     "megajs":"latest",
-    "node-cache":"latest"
+    "node-cache":"latest",
+    "@dark-yasiya/scrap":"latest",
+    "gifted-dls":"latest"
   }
 }
