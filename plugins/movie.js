@@ -1,4 +1,4 @@
-// Full Body Creater= Pathum Rajapakshe
+// Full Body Creater= Liyanaarachchi Avishka
 // pixaldrain , mega download succusfully added 
 
 const { cmd } = require("../command");
