@@ -37,14 +37,14 @@ async (conn, mek, m, { from, pushname = 'User', reply, sender }) => {
 *│🧬 𝚂𝚃𝙰𝚃𝚄𝚂 -* Online  
 *│🪼 𝚁𝙰𝙼 𝚄𝚂𝙰𝙶𝙴 -* ${formatRAMUsage()}  
 *│⏰ 𝚁𝚄𝙽𝚃𝙸𝙼𝙴 -* ${formatRuntime()}  
-*│🤖 𝙱𝙾𝚃 𝙽𝙰𝙼𝙴 -* ${config.BOT_NAME || '𝚀𝚄𝙴𝙴𝙽 𝙶𝙸𝙼𝙸'}  
-*│👑 𝙾𝚆𝙽𝙴𝚁 -* ${config.OWNER_NAME || '𝙺𝙴𝚂𝙷𝙰𝚁𝙰 𝙻𝙸𝚈𝙰𝙽𝙰𝙰𝚁𝙰𝙲𝙷𝙲𝙷𝙸'}  
+*│🤖 𝙱𝙾𝚃 𝙽𝙰𝙼𝙴 -* ${config.BOT_NAME || 'LAKSHAN MD'}  
+*│👑 𝙾𝚆𝙽𝙴𝚁 -* ${config.OWNER_NAME ||'LIYANAARACHCHI AVISHKA'}  
 *╰──────────●●►*  
 ━━━━━━━━━━━━━━━━━━  
 🔰 *I'M ALIVE AND READY!* 🔰  
 💬 Type *.menu* to see all commands!  
 
-*© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝚀𝚄𝙴𝙴𝙽 𝙶𝙸𝙼𝙸*
+*© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝐋𝐀𝐊𝐒𝐇𝐀𝐍 𝐌𝐃*
 `;
 
         const imageUrl = config.MENU_IMAGE_URL || 'https://ik.imagekit.io/6ilngyaqa/1752148389745-1000386145_W78uElpLF2.jpg';
