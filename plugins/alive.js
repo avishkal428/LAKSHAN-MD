@@ -47,7 +47,7 @@ async (conn, mek, m, { from, pushname = 'User', reply, sender }) => {
 *© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝐋𝐀𝐊𝐒𝐇𝐀𝐍 𝐌𝐃*
 `;
 
-        const imageUrl = config.MENU_IMAGE_URL || 'https://ik.imagekit.io/6ilngyaqa/1752148389745-1000386145_W78uElpLF2.jpg';
+        const imageUrl = config.MENU_IMAGE_URL || 'https://files.catbox.moe/lkvdvv.jpg';
         await conn.sendMessage(from, { 
             image: { url: imageUrl },
             caption: aliveText,
