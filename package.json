@@ -10,7 +10,7 @@
     "restart": "pm2 restart wabot"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "7.0.0",
+    "@whiskeysockets/baileys":"^6.7.21",
     "@adiwajshing/keyed-db": "^0.2.4",
     "pino": "latest",
     "pm2": "latest",
