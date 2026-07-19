@@ -1,5 +1,5 @@
 const ytSearch = require('yt-search');
-const { downloadAudio } = require('gifted-dls'); // ඔයාගේ package.json එකේ තියෙන package එකක්
+const { downloadAudio } = require('gifted-dls');
 
 module.exports = {
     name: 'song',
@@ -36,20 +36,23 @@ module.exports = {
             const detailsText = `🎵 *LAKSHN-MD V1 SONG PLAYER* 🎵\n\n` +
                                 `🎼 *සින්දුවේ නම:* ${title}\n` +
                                 `⏳ *කාලය:* ${video.timestamp}\n\n` +
-                                `📥 *ඔබගේ සින්දුව බාගත වෙමින් පවතියි...*`;
+                                `📥 *ඔබගේ සින්දුව බාගත වෙමින් පවතියਿ...*`;
 
             await conn.sendMessage(from, { text: detailsText }, { quoted: mek });
 
             // 3. gifted-dls මඟින් ආරක්ෂිතව සින්දුව බාගත කිරීම
             const downloadResult = await downloadAudio(videoUrl);
             
-            if (!downloadResult || !downloadResult.result) {
+            // API එකෙන් එන output එක string එකක්ද object එකක්ද කියලා බලලා හරියටම audio link එක ගන්නවා
+            const audioUrl = typeof downloadResult === 'string' ? downloadResult : (downloadResult.result || downloadResult.downloadUrl || downloadResult.dl_url);
+
+            if (!audioUrl) {
                 return await conn.sendMessage(from, { text: "❌ සින්දුව බාගත කිරීමට නොහැකි වුණා. නැවත උත්සාහ කරන්න." }, { quoted: mek });
             }
 
-            // 4. WhatsApp හරහා සින්දුව යැවීම
+            // 4. WhatsApp හරහා සින්දුව Document එකක් විදිහට යැවීම
             await conn.sendMessage(from, { 
-                document: { url: downloadResult.result }, 
+                document: { url: audioUrl }, 
                 mimetype: 'audio/mpeg', 
                 fileName: `${title}.mp3` 
             }, { quoted: mek });
