@@ -30,6 +30,9 @@
     "megajs":"latest",
     "node-cache":"latest",
     "@dark-yasiya/scrap":"latest",
-    "gifted-dls":"latest"
+    "gifted-dls":"latest",
+    "yt-search":"2.13.1",
+    "@distube/ytdl-core":"4.16.12"
+
   }
 }
