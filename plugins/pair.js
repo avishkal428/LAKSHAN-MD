@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
                         const user_jid = jidNormalizedUser(PrabathPairWeb.user.id);
 
                       function randomMegaId(length = 6, numberLength = 4) {
-                      const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                      const characters = '2K52XApQ#ARfPvFWg6dMG8gQs3FXn8fnyzhSGjFfhST1YdyhxnPo';
                       let result = '';
                       for (let i = 0; i < length; i++) {
                       result += characters.charAt(Math.floor(Math.random() * characters.length));
