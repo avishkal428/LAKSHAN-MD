@@ -24,15 +24,14 @@
     "megajs": "latest",
     "vm": "latest",
     "qrcode-terminal": "latest",
-    "axios": "latest",
-    "fs-extra":"latest",
     "fs":"latest",
     "megajs":"latest",
     "node-cache":"latest",
     "@dark-yasiya/scrap":"latest",
     "gifted-dls":"latest",
     "yt-search":"2.13.1",
-    "@distube/ytdl-core":"4.16.12"
+    "@distube/ytdl-core":"4.16.12",
+    "gifted-dls":"1.3.5"
 
   }
 }
