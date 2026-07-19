@@ -1,5 +1,4 @@
-const { Storage } = require('mega-nz');
-const fs = require('fs');
+const { Storage } = require('megajs');
 
 /**
  * ෆයිල් එකක් Mega.nz cloud එකට upload කරන function එක
@@ -9,20 +8,22 @@ const fs = require('fs');
  */
 async function upload(fileStream, fileName) {
     return new Promise((resolve, reject) => {
-        // මෙතන email සහ password හිස්ව තිබුනොත් Mega එකෙන් auto Anonymous (ගෙස්ට්) එකවුන්ට් එකක් හදනවා
-        const storage = new Storage({
-            email: process.env.MEGA_EMAIL || undefined,
-            password: process.env.MEGA_PASSWORD || undefined
-        });
+        const email = process.env.MEGA_EMAIL || undefined;
+        const password = process.env.MEGA_PASSWORD || undefined;
 
-        storage.ready((err) => {
+        let storage;
+        if (email && password) {
+            storage = new Storage({ email, password });
+        } else {
+            storage = new Storage();
+        }
+
+        storage.login((err) => {
             if (err) return reject(err);
 
-            // ෆයිල් එක Mega එකට upload කිරීම
-            storage.upload(fileName, fileStream, (err, file) => {
+            storage.upload({ name: fileName }, fileStream, (err, file) => {
                 if (err) return reject(err);
 
-                // Upload වුණු ෆයිල් එකේ public link එක (URL) ලබා ගැනීම
                 file.link((err, url) => {
                     if (err) return reject(err);
                     resolve(url);
@@ -33,4 +34,3 @@ async function upload(fileStream, fileName) {
 }
 
 module.exports = { upload };
-
