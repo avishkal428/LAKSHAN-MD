@@ -17,6 +17,7 @@ const util = require('util')
 const { sms,downloadMediaMessage } = require('./lib/msg')
 const axios = require('axios')
 const { File } = require('megajs')
+const { Boom } = require('@hapi/boom') // <-- Boom එක මෙතනට එකතු කළා
 const prefix = '.'
 
 const ownerNumber = ['94725337806']
@@ -52,12 +53,21 @@ const conn = makeWASocket({
         version
         })
     
+//===================CONNECTION UPDATE============================
 conn.ev.on('connection.update', (update) => {
 const { connection, lastDisconnect } = update
+
 if (connection === 'close') {
-if (lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut) {
-connectToWA()
-}
+    // සැබෑ ලෙසම ලොග් අවුට් වී නැත්නම් පමණක් නැවත සම්බන්ධ වීමට උත්සාහ කරයි
+    const shouldReconnect = (lastDisconnect.error instanceof Boom) 
+        ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut 
+        : true;
+        
+    console.log('සම්බන්ධතාවය බිඳ වැටුණි. නැවත සම්බන්ධ වෙමින්: ', shouldReconnect);
+    
+    if (shouldReconnect) {
+        setTimeout(() => connectToWA(), 5000); // තත්පර 5 ක ප්‍රේමයක් ලබා දී නැවත රන් කරයි
+    }
 } else if (connection === 'open') {
 console.log('😼 Installing... ')
 const path = require('path');
@@ -75,6 +85,8 @@ conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files
 
 }
 })
+//================================================================
+
 conn.ev.on('creds.update', saveCreds)  
 
 conn.ev.on('messages.upsert', async(mek) => {
