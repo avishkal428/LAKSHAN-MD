@@ -30,7 +30,9 @@
     "@dark-yasiya/scrap":"latest",
     "gifted-dls":"latest",
     "yt-search":"2.13.1",
-    "sadaslk-dlcore":"latest"
+    "sadaslk-dlcore":"latest",
+    "mega-nz": "^1.2.0"
+
 
   }
 }
