@@ -1,141 +1,115 @@
-const { readEnv } = require('../lib/database');
+const { readEnv } = ('../lib/database');
 const { cmd, commands } = require('../command');
-const menuSessions = new Map();
 
-// Track bot start time
+// Track bot start time for uptime
 const startTime = Date.now();
-
-// Cleanup expired sessions
-setInterval(() => {
-    for (const [key, session] of menuSessions) {
-        if (Date.now() - session.timestamp > 300000) { // 5 minutes
-            menuSessions.delete(key);
-        }
-    }
-}, 60000); // Run every minute
 
 // Format RAM usage
 function formatRAMUsage() {
-    const used = process.memoryUsage().heapUsed / 1024 / 1024;
+    const requireused = process.memoryUsage().heapUsed / 1024 / 1024;
     const total = process.memoryUsage().rss / 1024 / 1024;
     return `${used.toFixed(2)}MB / ${total.toFixed(0)}MB`;
 }
 
-// Format runtime
+// Format uptime
 function formatRuntime() {
     const ms = Date.now() - startTime;
-    const minutes = Math.floor(ms / 60000);
-    const seconds = Math.floor(ms / 1000) % 60;
+    const hours   = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
     return `${minutes}m ${seconds}s`;
 }
 
-// Global message handler for category selection
-const handleMessage = async (conn, msg, sender, from, reply) => {
-    if (!msg.message?.extendedTextMessage?.text) return;
-    const selected = parseInt(msg.message.extendedTextMessage.text);
-    const session = menuSessions.get(sender);
+cmd(
+    {
+        pattern: 'menu',
+        desc: 'Show all bot commands',
+        category: 'main',
+        filename: __filename,
+    },
+    async (conn, mek, m, { from, pushname = 'User', reply }) => {
+        try {
+            const config = await readEnv();
+            if (!config) throw new Error('Config (readEnv) returned null');
+            if (!commands || !Array.isArray(commands)) throw new Error('commands list is not available');
 
-    if (!session || msg.key.remoteJid !== from) return;
-    if (Date.now() - session.timestamp > 300000) {
-        menuSessions.delete(sender);
-        return; // Timeout message removed
-    }
+            const PREFIX = config.PREFIX || '.';
 
-    if (msg.message.extendedTextMessage.contextInfo?.stanzaId === session.messageId) {
-        if (isNaN(selected) || selected < 1 || selected > session.categories.length) {
-            return reply(`❌ Please select between 1-${session.categories.length}`);
-        }
+            // ─── Category definitions ────────────────────────────────────────────
+            const categories = [
+                { name: 'main',     title: 'Main',     emoji: '🏆' },
+                { name: 'owner',    title: 'Owner',    emoji: '👑' },
+                { name: 'group',    title: 'Group',    emoji: '👥' },
+                { name: 'download', title: 'Download', emoji: '⬇️'  },
+                { name: 'search',   title: 'Search',   emoji: '🔎' },
+                { name: 'convert',  title: 'Convert',  emoji: '🔄' },
+                { name: 'movie',    title: 'Movie',    emoji: '🎥' },
+            ];
 
-        const config = await readEnv();
-        const selectedCategory = session.categories[selected - 1];
+            // ─── Build menu text ─────────────────────────────────────────────────
+            let menuText = '';
+            menuText += `╔══════════════════════╗\n`;
+            menuText += `║   🤖 *LAKSHAN  MD*   ║\n`;
+            menuText += `╚══════════════════════╝\n\n`;
+            menuText += `👤 *User :* ${pushname}\n`;
+            menuText += `🧬 *RAM  :* ${formatRAMUsage()}\n`;
+            menuText += `⏱️  *Up   :* ${formatRuntime()}\n`;
+            menuText += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-        const categoryCommands = commands.filter(cmd => 
-            cmd.category === selectedCategory.name && !cmd.dontAddCommandList
-        );
+            let totalCmds = 0;
 
-        const categoryMenu = `
-━━━━━━━━━━━━━━━━━━
-*╭─「 ${selectedCategory.title} 」*
-*│📚 Commands:* ${categoryCommands.length}
-*╰──────────●●►*
-${categoryCommands.map(cmd => `➤ *${config.PREFIX}${cmd.pattern}*`).join('\n')}
-━━━━━━━━━━━━━━━━━━
-*© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝚀𝚄𝙴𝙴𝙽 𝙶𝙸𝙼𝙸*
-`;
+            for (const cat of categories) {
+                const catCmds = commands.filter(
+                    (c) => c.category === cat.name && !c.dontAddCommandList && c.pattern
+                );
+                if (catCmds.length === 0) continue;
 
-        await conn.sendMessage(from, {
-            image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/lkvdvv.jpg' },
-            caption: categoryMenu,
-            contextInfo: {
-                mentionedJid: [sender]
+                totalCmds += catCmds.length;
+
+                menuText += `*╭─「 ${cat.emoji} ${cat.title} 」*\n`;
+                for (const c of catCmds) {
+                    menuText += `*│* ➤ *${PREFIX}${c.pattern}*\n`;
+                }
+                menuText += `*╰──────────●●►*\n\n`;
             }
-        }, { quoted: msg });
-    }
-};
 
-cmd({
-    pattern: "menu",
-    desc: "Show interactive command list",
-    category: "main",
-    filename: __filename
-},
-async (conn, mek, m, { from, pushname = 'User', reply, sender }) => {
-    try {
-        const config = await readEnv();
-        if (!commands || !config) throw new Error("Missing dependencies");
+            menuText += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            menuText += `📦 *Total Commands:* ${totalCmds}\n`;
+            menuText += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+            menuText += `*© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝐋𝐀𝐊𝐒𝐇𝐀𝐍 𝐌𝐃*`;
 
-        const categories = [
-            { title: "Main", name: "main", emoji: "🏆" },
-            { title: "Owner", name: "owner", emoji: "👑" },
-            { title: "Group", name: "group", emoji: "👥" },
-            { title: "Download", name: "download", emoji: "⬇️" },
-            { title: "Search", name: "search", emoji: "🔎" },
-            { title: "Convert", name: "convert", emoji: "🔄" },
-            { title: "Movie", name: "movie", emoji: "🎥" }
-        ];
+            // ─── Send message (image preferred, text fallback) ───────────────────
+            const imageUrl =
+                config.MENU_IMAGE_URL && config.MENU_IMAGE_URL.startsWith('http')
+                    ? config.MENU_IMAGE_URL
+                    : 'https://files.catbox.moe/lkvdvv.jpg';
 
-        const menuText = `
-🌟 Hello, *${pushname}*!  
-━━━━━━━━━━━━━━━━━━  
-*╭─「 Commands Panel 」*  
-*│🧬 RAM Usage:* ${formatRAMUsage()}  
-*│🪼 Runtime:* ${formatRuntime()}  
-*╰──────────●●►*  
-━━━━━━━━━━━━━━━━━━  
-🔰 MAIN MENU 🔰  
-┏━━━━━━━━━━━━━┓  
-${categories.map((cat, index) => `┃ ${index + 1} ${cat.emoji} ${cat.title}`).join('\n')}  
-┗━━━━━━━━━━━━━┛  
-
-💬 Reply with a number to choose an option!  
-
-*© 𝙿𝙾𝚆𝙴𝚁𝙳 𝙱𝚈 𝐋𝐀𝐊𝐒𝐇𝐀𝐍 𝐌𝐃*
-`;
-
-        const sentMsg = await conn.sendMessage(from, { 
-            image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/lkvdvv.jpg' },
-            caption: menuText,
-            contextInfo: {
-                mentionedJid: [sender]
+            try {
+                await conn.sendMessage(
+                    from,
+                    {
+                        image: { url: imageUrl },
+                        caption: menuText,
+                        contextInfo: { mentionedJid: [m.sender] },
+                    },
+                    { quoted: mek }
+                );
+            } catch (imgErr) {
+                // Image failed (URL unreachable, etc.) — fall back to plain text
+                console.warn('Menu image send failed, falling back to text:', imgErr.message);
+                await conn.sendMessage(
+                    from,
+                    {
+                        text: menuText,
+                        contextInfo: { mentionedJid: [m.sender] },
+                    },
+                    { quoted: mek }
+                );
             }
-        }, { quoted: mek });
-
-        // Store session data
-        menuSessions.set(sender, {
-            timestamp: Date.now(),
-            categories,
-            messageId: sentMsg.key.id,
-            lastUsed: Date.now()
-        });
-
-        // Register message handler if not already done
-        if (!conn.menuHandlerRegistered) {
-            conn.ev.on('messages.upsert', (msgUpdate) => handleMessage(conn, msgUpdate.messages[0], sender, from, reply));
-            conn.menuHandlerRegistered = true;
+        } catch (e) {
+            console.error('Menu Error:', e);
+            reply(`❌ *Menu Error:* ${e.message}`);
         }
-
-    } catch (e) {
-        console.error("Menu Error:", e);
-        reply("❌ Failed to load menu. Please try again later.");
     }
-});
+);
