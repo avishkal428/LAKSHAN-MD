@@ -1,65 +1,169 @@
-const ytSearch = require('yt-search');
-const { downloadAudio } = require('gifted-dls');
+const { cmd } = require("../command");
+const { ytmp3, ytmp4, tiktok } = require("sadaslk-dlcore");
+const yts = require("yt-search");
 
-module.exports = {
-    name: 'song',
-    alias: ['audio', 'sing', 'play'],
-    category: 'download',
-    desc: 'Download YouTube songs easily',
-    async execute(conn, mek, from, args, msg) {
-        try {
-            // 1. නමක් ඇතුළත් කර ඇත්දැයි බැලීම
-            if (!args[0]) {
-                return await conn.sendMessage(from, { 
-                    text: "✨ *LAKSHN-MD V1 SONG DOWNLOADER* ✨\n\n❌ කරුණාකර සින්දුවක නමක් හෝ YouTube ලින්ක් එකක් ඇතුළත් කරන්න.\n\n*උදාහරණ:* `.song Faded`" 
-                }, { quoted: mek });
-            }
 
-            const searchQuery = args.join(" ");
-            
-            // සෙවීම ආරම්භ කළ බව දැනුම් දීම
-            await conn.sendMessage(from, { text: "🔍 *YouTube හි සොයමින් පවතියි...*" }, { quoted: mek });
+async function getYoutube(query) {
+  const isUrl = /(youtube\.com|youtu\.be)/i.test(query);
+  if (isUrl) {
+    const id = query.split("v=")[1] || query.split("/").pop();
+    const info = await yts({ videoId: id });
+    return info;
+  }
 
-            // 2. YouTube සෙවීම
-            const searchResult = await ytSearch(searchQuery);
-            const videos = searchResult.videos;
+  const search = await yts(query);
+  if (!search.videos.length) return null;
+  return search.videos[0];
+}
 
-            if (!videos || videos.length === 0) {
-                return await conn.sendMessage(from, { text: "❌ කණගාටුයි, ඔය නමින් සින්දුවක් සොයාගැනීමට නොහැකි වුණා." }, { quoted: mek });
-            }
 
-            const video = videos[0];
-            const videoUrl = video.url;
-            const title = video.title;
+cmd(
+  {
+    pattern: "ytmp3",
+    alias: ["yta", "song"],
+    desc: "Download YouTube MP3 by name or link",
+    category: "download",
+    filename: __filename,
+  },
+  async (bot, mek, m, { from, q, reply }) => {
+    try {
+      if (!q) return reply("🎵 Send song name or YouTube link");
 
-            // සින්දුවේ විස්තර පෙන්වීම
-            const detailsText = `🎵 *LAKSHN-MD V1 SONG PLAYER* 🎵\n\n` +
-                                `🎼 *සින්දුවේ නම:* ${title}\n` +
-                                `⏳ *කාලය:* ${video.timestamp}\n\n` +
-                                `📥 *ඔබගේ සින්දුව බාගත වෙමින් පවතියਿ...*`;
+      reply("🔎 Searching YouTube...");
+      const video = await getYoutube(q);
+      if (!video) return reply("❌ No results found");
 
-            await conn.sendMessage(from, { text: detailsText }, { quoted: mek });
+      const caption =
+        `🎵 *${video.title}*\n\n` +
+        `👤 Channel: ${video.author.name}\n` +
+        `⏱ Duration: ${video.timestamp}\n` +
+        `👀 Views: ${video.views.toLocaleString()}\n` +
+        `🔗 ${video.url}`;
 
-            // 3. gifted-dls මඟින් ආරක්ෂිතව සින්දුව බාගත කිරීම
-            const downloadResult = await downloadAudio(videoUrl);
-            
-            // API එකෙන් එන output එක string එකක්ද object එකක්ද කියලා බලලා හරියටම audio link එක ගන්නවා
-            const audioUrl = typeof downloadResult === 'string' ? downloadResult : (downloadResult.result || downloadResult.downloadUrl || downloadResult.dl_url);
+      await bot.sendMessage(
+        from,
+        {
+          image: { url: video.thumbnail },
+          caption,
+        },
+        { quoted: mek }
+      );
 
-            if (!audioUrl) {
-                return await conn.sendMessage(from, { text: "❌ සින්දුව බාගත කිරීමට නොහැකි වුණා. නැවත උත්සාහ කරන්න." }, { quoted: mek });
-            }
+      reply("⬇️ Downloading MP3...");
 
-            // 4. WhatsApp හරහා සින්දුව Document එකක් විදිහට යැවීම
-            await conn.sendMessage(from, { 
-                document: { url: audioUrl }, 
-                mimetype: 'audio/mpeg', 
-                fileName: `${title}.mp3` 
-            }, { quoted: mek });
+      const data = await ytmp3(video.url);
+      if (!data?.url) return reply("❌ Failed to download MP3");
 
-        } catch (error) {
-            console.error("Song Command Error: ", error);
-            await conn.sendMessage(from, { text: "❌ කෝඩ් එකේ දෝෂයක් තියෙනවා. කරුණාකර බොට්ගේ Terminal/CMD එක පරික්ෂා කරන්න." }, { quoted: mek });
-        }
+      await bot.sendMessage(
+        from,
+        {
+          audio: { url: data.url },
+          mimetype: "audio/mpeg",
+        },
+        { quoted: mek }
+      );
+    } catch (e) {
+      console.log("YTMP3 ERROR:", e);
+      reply("❌ Error while downloading MP3");
     }
-};
+  }
+);
+
+cmd(
+  {
+    pattern: "ytmp4",
+    alias: ["ytv", "video"],
+    desc: "Download YouTube MP4 by name or link",
+    category: "download",
+    filename: __filename,
+  },
+  async (bot, mek, m, { from, q, reply }) => {
+    try {
+      if (!q) return reply("🎬 Send video name or YouTube link");
+
+      reply("🔎 Searching YouTube...");
+      const video = await getYoutube(q);
+      if (!video) return reply("❌ No results found");
+
+      const caption =
+        `🎬 *${video.title}*\n\n` +
+        `👤 Channel: ${video.author.name}\n` +
+        `⏱ Duration: ${video.timestamp}\n` +
+        `👀 Views: ${video.views.toLocaleString()}\n` +
+        `📅 Uploaded: ${video.ago}\n` +
+        `🔗 ${video.url}`;
+
+      await bot.sendMessage(
+        from,
+        {
+          image: { url: video.thumbnail },
+          caption,
+        },
+        { quoted: mek }
+      );
+
+      reply("⬇️ Downloading video...");
+
+      const data = await ytmp4(video.url, {
+        format: "mp4",
+        videoQuality: "720",
+      });
+
+      if (!data?.url) return reply("❌ Failed to download video");
+
+await bot.sendMessage(
+  from,
+  {
+    video: { url: data.url },
+    mimetype: "video/mp4",
+    fileName: data.filename || "youtube_video.mp4",
+    caption: "🎬 YouTube video",
+    gifPlayback: false,
+  },
+  { quoted: mek }
+);
+    } catch (e) {
+      console.log("YTMP4 ERROR:", e);
+      reply("❌ Error while downloading video");
+    }
+  }
+);
+
+
+cmd(
+  {
+    pattern: "tiktok",
+    alias: ["tt"],
+    desc: "Download TikTok video",
+    category: "download",
+    filename: __filename,
+  },
+  async (bot, mek, m, { from, q, reply }) => {
+    try {
+      if (!q) return reply("📱 Send TikTok link");
+
+      reply("⬇️ Downloading TikTok video...");
+
+      const data = await tiktok(q);
+      if (!data?.no_watermark)
+        return reply("❌ Failed to download TikTok video");
+
+      const caption =
+        `🎵 *${data.title || "TikTok Video"}*\n\n` +
+        `👤 Author: ${data.author || "Unknown"}\n` +
+        `⏱ Duration: ${data.runtime}s`;
+
+      await bot.sendMessage(
+        from,
+        {
+          video: { url: data.no_watermark },
+          caption,
+        },
+        { quoted: mek }
+      );
+    } catch (e) {
+      console.log("TIKTOK ERROR:", e);
+      reply("❌ Error while downloading TikTok video");
+    }
+  }
+);
