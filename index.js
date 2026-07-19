@@ -17,7 +17,7 @@ const util = require('util')
 const { sms,downloadMediaMessage } = require('./lib/msg')
 const axios = require('axios')
 const { File } = require('megajs')
-const { Boom } = require('@hapi/boom') // <-- Boom එක මෙතනට එකතු කළා
+const { Boom } = require('@hapi/boom')
 const prefix = '.'
 
 const ownerNumber = ['94725337806']
@@ -39,7 +39,13 @@ const port = process.env.PORT || 8000;
 
 //=============================================
 
+// කනෙක්ෂන් ලූප් එකක් ඇතිවීම වැලැක්වීමට මෙහෙම flag එකක් දාමු
+let isConnecting = false;
+
 async function connectToWA() {
+if (isConnecting) return; // දැනටමත් කනෙක්ට් වෙමින් පවතී නම් නැවත රන් නොකරයි
+isConnecting = true;
+
 console.log("Connecting wa bot 🧬...");
 const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/')
 var { version } = await fetchLatestBaileysVersion()
@@ -58,7 +64,7 @@ conn.ev.on('connection.update', (update) => {
 const { connection, lastDisconnect } = update
 
 if (connection === 'close') {
-    // සැබෑ ලෙසම ලොග් අවුට් වී නැත්නම් පමණක් නැවත සම්බන්ධ වීමට උත්සාහ කරයි
+    isConnecting = false; // නැවත කනෙක්ට් වීමට ඉඩ දෙන්න
     const shouldReconnect = (lastDisconnect.error instanceof Boom) 
         ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut 
         : true;
@@ -66,9 +72,10 @@ if (connection === 'close') {
     console.log('සම්බන්ධතාවය බිඳ වැටුණි. නැවත සම්බන්ධ වෙමින්: ', shouldReconnect);
     
     if (shouldReconnect) {
-        setTimeout(() => connectToWA(), 5000); // තත්පර 5 ක ප්‍රේමයක් ලබා දී නැවත රන් කරයි
+        setTimeout(() => connectToWA(), 5000); // තත්පර 5කට පසු නැවත උත්සාහ කරයි
     }
 } else if (connection === 'open') {
+isConnecting = false;
 console.log('😼 Installing... ')
 const path = require('path');
 fs.readdirSync("./plugins/").forEach((plugin) => {
@@ -79,9 +86,15 @@ require("./plugins/" + plugin);
 console.log('Plugins installed successful ✅')
 console.log('Bot connected to whatsapp ✅')
 
-let up = `LAKSHAN-MD-BOT connected successful ✅\n\nPREFIX: ${prefix}`;
-
-conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files.catbox.moe/uqofdi.jpg` }, caption: up })
+// 💡 මෙතන තමයි වෙනස් කලේ: සෙෂන් එක සර්වර් එකට සෙට්ල් වෙන්න තත්පර 5ක් දීලා මැසේජ් එක යවනවා
+setTimeout(async () => {
+    try {
+        let up = `LAKSHAN-MD-BOT connected successful ✅\n\nPREFIX: ${prefix}`;
+        await conn.sendMessage(ownerNumber + "@s.whatsapp.net", { image: { url: `https://files.catbox.moe/uqofdi.jpg` }, caption: up });
+    } catch (e) {
+        console.log("මුල් මැසේජ් එක යැවීමේදී දෝෂයක් (නොසලකා හරින්න): ", e.message);
+    }
+}, 5000);
 
 }
 })
