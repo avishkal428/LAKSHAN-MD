@@ -1,5 +1,5 @@
 const { cmd } = require("../command");
-const { generateForwardMessageContent, generateWAMessageFromContent } = require("@whiskeysockets/baileys");
+const { copyNForward } = require("../lib/functions");
 
 cmd(
   {
@@ -18,33 +18,18 @@ cmd(
 
       const targetJid = q.trim();
 
-      // Quoted message එක Baileys Forwarding content එකක් බවට පත්කිරීම
-      const forwardContent = await generateForwardMessageContent(
-        {
-          key: {
-            remoteJid: from,
-            id: ctx.stanzaId,
-            participant: ctx.participant,
-          },
-          message: ctx.quotedMessage,
-        },
-        { forceForward: true }
-      );
+      const quotedKey = {
+        remoteJid: from,
+        id: ctx.stanzaId,
+        participant: ctx.participant || from,
+      };
 
-      // New WA Message එකක් Generate කිරීම
-      const waMessage = await generateWAMessageFromContent(
-        targetJid,
-        forwardContent,
-        {
-          userJid: bot.user.id,
-        }
-      );
+      const quotedFull = {
+        key: quotedKey,
+        message: ctx.quotedMessage,
+      };
 
-      // Relay Message හරහා Target Chat එකට Send කිරීම
-      await bot.relayMessage(targetJid, waMessage.message, {
-        messageId: waMessage.key.id,
-      });
-
+      await copyNForward(bot, targetJid, quotedFull, true);
       await reply(`✅ Forwarded successfully to ${targetJid}`);
     } catch (e) {
       console.log("FORWARD ERROR:", e);
