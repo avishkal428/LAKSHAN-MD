@@ -1,35 +1,48 @@
 const { cmd } = require("../command");
-const { copyNForward } = require("../lib/functions");
 
 cmd(
   {
     pattern: "forward",
     alias: ["fo"],
     react: "📌",
-    desc: "Forward the replied message to another chat",
+    desc: "Forward replied message to target JID",
     category: "tools",
     filename: __filename,
   },
   async (bot, mek, m, { from, q, reply }) => {
     try {
+      // 1. Check if user replied to a message
       const ctx = mek.message?.extendedTextMessage?.contextInfo;
-      if (!ctx || !ctx.quotedMessage) return reply("↩️ Reply to the message you want to forward, then run:\n.fo <jid>");
-      if (!q) return reply("📌 Give me a target chat.\nPerson: .fo 94771234567@s.whatsapp.net\nGroup: .fo 120363012345678901@g.us");
+      if (!ctx || !ctx.quotedMessage) {
+        return reply("↩️ Reply to the message you want to forward, then run:\n.fo <jid>");
+      }
+
+      // 2. Check if target JID is provided
+      if (!q) {
+        return reply("📌 Give me a target chat JID.\nPerson: .fo 94771234567@s.whatsapp.net\nGroup: .fo 120363012345678901@g.us");
+      }
 
       const targetJid = q.trim();
 
-      const quotedKey = {
-        remoteJid: from,
-        id: ctx.stanzaId,
-        participant: ctx.participant || from,
-      };
+      // 3. Extract quoted message properly
+      const quotedMsg = ctx.quotedMessage;
 
-      const quotedFull = {
-        key: quotedKey,
-        message: ctx.quotedMessage,
-      };
+      // 4. Direct Forwarding method (100% Native Baileys method)
+      await bot.sendMessage(
+        targetJid,
+        {
+          forward: {
+            key: {
+              remoteJid: from,
+              id: ctx.stanzaId,
+              participant: ctx.participant || from,
+              fromMe: false
+            },
+            message: quotedMsg
+          }
+        }
+      );
 
-      await copyNForward(bot, targetJid, quotedFull, true);
       await reply(`✅ Forwarded successfully to ${targetJid}`);
     } catch (e) {
       console.log("FORWARD ERROR:", e);
