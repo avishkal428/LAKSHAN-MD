@@ -4,7 +4,7 @@ const { runtime } = require('../lib/functions');
 cmd({
     pattern: "ping",
     alias: ["p", "speed"],
-    react: "⏰",
+    react: "📌",
     desc: "Check bot response speed and uptime.",
     category: "main",
     use: ".ping",
