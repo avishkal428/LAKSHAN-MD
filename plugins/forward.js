@@ -1,4 +1,5 @@
 const { cmd } = require("../command");
+const { generateForwardMessageContent, generateWAMessageFromContent } = require("@whiskeysockets/baileys");
 
 cmd(
   {
@@ -17,24 +18,31 @@ cmd(
 
       const targetJid = q.trim();
 
-      // Forwarded tag එක සහ context info එක සකස් කිරීම
-      const messageToForward = {
-        ...ctx.quotedMessage,
-      };
+      // Quoted message එක Baileys Forwarding content එකක් බවට පත්කිරීම
+      const forwardContent = await generateForwardMessageContent(
+        {
+          key: {
+            remoteJid: from,
+            id: ctx.stanzaId,
+            participant: ctx.participant,
+          },
+          message: ctx.quotedMessage,
+        },
+        { forceForward: true }
+      );
 
-      // Message type එක සොයාගැනීම (text, image, video, document etc.)
-      const messageType = Object.keys(messageToForward)[0];
+      // New WA Message එකක් Generate කිරීම
+      const waMessage = await generateWAMessageFromContent(
+        targetJid,
+        forwardContent,
+        {
+          userJid: bot.user.id,
+        }
+      );
 
-      if (messageType && messageToForward[messageType]) {
-        messageToForward[messageType].contextInfo = {
-          ...(messageToForward[messageType].contextInfo || {}),
-          isForwarded: true,
-          forwardingScore: 1
-        };
-      }
-
-      await bot.relayMessage(targetJid, messageToForward, {
-        messageId: mek.key.id
+      // Relay Message හරහා Target Chat එකට Send කිරීම
+      await bot.relayMessage(targetJid, waMessage.message, {
+        messageId: waMessage.key.id,
       });
 
       await reply(`✅ Forwarded successfully to ${targetJid}`);
