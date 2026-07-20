@@ -8,12 +8,10 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {
     try {
-        let text = `📌 *JID Information*\n\n`;
-        text += `*Current Chat JID:*\n${from}\n`;
+        
 
         if (from.endsWith('@g.us')) text += `_(Group Chat)_`;
         else if (from.endsWith('@newsletter')) text += `_(Channel / Newsletter)_`;
-        else text += `_(Private Chat)_`;
 
         const contextInfo = mek.message?.extendedTextMessage?.contextInfo;
         const quotedParticipant = contextInfo?.participant;
