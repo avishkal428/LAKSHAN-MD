@@ -17,18 +17,27 @@ cmd(
 
       const targetJid = q.trim();
 
-      await bot.sendMessage(targetJid, {
-        forward: {
-          key: {
-            remoteJid: from,
-            id: ctx.stanzaId,
-            participant: ctx.participant,
-          },
-          message: ctx.quotedMessage,
-        },
+      // Forwarded tag එක සහ context info එක සකස් කිරීම
+      const messageToForward = {
+        ...ctx.quotedMessage,
+      };
+
+      // Message type එක සොයාගැනීම (text, image, video, document etc.)
+      const messageType = Object.keys(messageToForward)[0];
+
+      if (messageType && messageToForward[messageType]) {
+        messageToForward[messageType].contextInfo = {
+          ...(messageToForward[messageType].contextInfo || {}),
+          isForwarded: true,
+          forwardingScore: 1
+        };
+      }
+
+      await bot.relayMessage(targetJid, messageToForward, {
+        messageId: mek.key.id
       });
 
-      await reply(`✅ Forwarded to ${targetJid}`);
+      await reply(`✅ Forwarded successfully to ${targetJid}`);
     } catch (e) {
       console.log("FORWARD ERROR:", e);
       reply("❌ Forward failed: " + e.message);
