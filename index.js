@@ -22,7 +22,7 @@ app.use(cors());
 
 const BOT_NAME = 'LKSHAN-MD';
 const PREFIX = '.';
-const MEGA_EMAIL = 'femidam660@rapplo.com';
+const MEGA_EMAIL = 'newmage871@gmail.com';
 const MEGA_PASSWORD = 'avishkal@23';
 const OWNER_NUMBER = '94724098953'; // Owner number for connect message
 
