@@ -199,7 +199,7 @@ async function startBot() {
 `;
 
                     await sock.sendMessage(ownerJid, {
-                        image: { url: 'https://i.ibb.co/7xtcf5Vv/file-0000000002d48230a5ad48cf94c182d7.png' },
+                        image: { url: 'https://files.catbox.moe/uqofdi.jpg' },
                         caption: connectMsg
                     });
                 } catch (err) {
