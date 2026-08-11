@@ -11,8 +11,9 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { Storage } = require('megajs');
+const { Storage, File } = require('megajs');
 const archiver = require('archiver');
+const unzipper = require('unzipper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,11 +21,11 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-const BOT_NAME = 'LKSHAN-MD';
-const PREFIX = '.';
-const MEGA_EMAIL = 'newmage871@gmail.com';
-const MEGA_PASSWORD = 'avishkal@23';
-const OWNER_NUMBER = '94724098953'; // Owner number for connect message
+const BOT_NAME = process.env.BOT_NAME || 'LKSHAN-MD';
+const PREFIX = process.env.PREFIX || '.';
+const MEGA_EMAIL = process.env.MEGA_EMAIL || 'magenew871@gmail.com';
+const MEGA_PASSWORD = process.env.MEGA_PASSWORD || 'avishkal@23';
+const OWNER_NUMBER = process.env.OWNER_NUMBER || '94724098953';
 
 let sock;
 const AUTH_DIR = path.join(__dirname, 'auth_info');
@@ -35,7 +36,7 @@ function loadPlugins() {
     commands.clear();
     const pluginsDir = path.join(__dirname, 'plugins');
     if (!fs.existsSync(pluginsDir)) {
-        fs.mkdirSync(pluginsDir);
+        fs.mkdirSync(pluginsDir, { recursive: true });
     }
 
     const files = fs.readdirSync(pluginsDir);
@@ -59,6 +60,7 @@ function loadPlugins() {
 
 loadPlugins();
 
+// ☁️ Upload Session to Mega
 async function uploadSessionToMega(userJid) {
     try {
         if (!fs.existsSync(AUTH_DIR) || fs.readdirSync(AUTH_DIR).length === 0) return;
@@ -72,7 +74,10 @@ async function uploadSessionToMega(userJid) {
         archive.directory(AUTH_DIR, false);
         await archive.finalize();
 
-        await new Promise((resolve) => output.on('close', resolve));
+        await new Promise((resolve, reject) => {
+            output.on('close', resolve);
+            output.on('error', reject);
+        });
 
         console.log('☁️ Uploading to Mega...');
         const storage = await new Storage({
@@ -101,19 +106,19 @@ async function uploadSessionToMega(userJid) {
     }
 }
 
+// 📥 Download Session from Mega
 async function downloadSessionFromMega() {
     const sessionUrl = process.env.SESSION_ID;
     if (!sessionUrl) return false;
 
     try {
         console.log('📥 Downloading Session from Mega...');
-        if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR);
+        if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
 
-        const File = require('megajs').File;
         const file = File.fromURL(sessionUrl);
         const zipPath = path.join(__dirname, 'downloaded_session.zip');
 
-        const stream = file.download();
+        const stream = file.download({});
         const writeStream = fs.createWriteStream(zipPath);
         stream.pipe(writeStream);
 
@@ -122,7 +127,6 @@ async function downloadSessionFromMega() {
             writeStream.on('error', reject);
         });
 
-        const unzipper = require('unzipper');
         await fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: AUTH_DIR })).promise();
         if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
@@ -134,144 +138,136 @@ async function downloadSessionFromMega() {
     }
 }
 
+// 🚀 Start WhatsApp Bot Connection
 async function startBot() {
-    if (!fs.existsSync(AUTH_DIR) || fs.readdirSync(AUTH_DIR).length === 0) {
-        await downloadSessionFromMega();
-    }
+    try {
+        if (!fs.existsSync(AUTH_DIR) || fs.readdirSync(AUTH_DIR).length === 0) {
+            await downloadSessionFromMega();
+        }
 
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    const { version } = await fetchLatestBaileysVersion();
+        const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+        const { version } = await fetchLatestBaileysVersion();
 
-    sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        auth: state,
-        printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'),
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000,
-        emitOwnEvents: true,
-        retryRequestDelayMs: 250
-    });
+        sock = makeWASocket({
+            version,
+            logger: pino({ level: 'silent' }),
+            auth: state,
+            printQRInTerminal: false,
+            browser: Browsers.ubuntu('Chrome'),
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000,
+            keepAliveIntervalMs: 25000,
+            emitOwnEvents: true,
+            retryRequestDelayMs: 250
+        });
 
-    sock.ev.on('creds.update', saveCreds);
+        sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect } = update;
 
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            console.log(`🔴 Connection Closed (Code: ${statusCode}). Reconnecting...`);
-            if (statusCode !== DisconnectReason.loggedOut) {
-                setTimeout(startBot, 3000);
-            } else {
-                console.log('❌ Session Logged Out. Please re-pair!');
-                if (fs.existsSync(AUTH_DIR)) fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-            }
-        } else if (connection === 'open') {
-            console.log(`🟢 [${BOT_NAME}] Connected successfully!`);
+            if (connection === 'close') {
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                console.log(`🔴 Connection Closed (Code: ${statusCode}). Reconnecting...`);
+                if (statusCode !== DisconnectReason.loggedOut) {
+                    setTimeout(startBot, 5000);
+                } else {
+                    console.log('❌ Session Logged Out. Clearing auth info...');
+                    if (fs.existsSync(AUTH_DIR)) fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+                }
+            } else if (connection === 'open') {
+                console.log(`🟢 [${BOT_NAME}] Connected successfully!`);
 
-            // Send AKASH-MD Connection Message to Owner Number
-            try {
-                const ownerJid = `${OWNER_NUMBER}@s.whatsapp.net`;
-                const connectMsg = `
+                try {
+                    const ownerJid = `${OWNER_NUMBER}@s.whatsapp.net`;
+                    const connectMsg = `
 *╭───────────────────╮*
-*│ 🤖 *LAKSHAN-MD BOT* │*
+*│ 🤖 *${BOT_NAME} BOT* │*
 *╰───────────────────╯*
 
-*┌───────────────────┐*
-*│  ✅ *CONNECTED SUCCESSFULLY!*
-*└───────────────────┘*
+*✅ CONNECTED SUCCESSFULLY!*
 
-*📌 *Bot Name:*LAKSHAN-MD*
-*👤 *Owner Number:* ${OWNER_NUMBER}*
-*⚡ *Prefix:* [ ${PREFIX} ]*
-*🕒 *Connected Time:* ${new Date().toLocaleTimeString()}*
+*📌 Bot Name:* ${BOT_NAME}
+*👤 Owner Number:* ${OWNER_NUMBER}
+*⚡ Prefix:* [ ${PREFIX} ]
+*🕒 Connected Time:* ${new Date().toLocaleTimeString()}
 
-*┌───────────────────┐*
-*│  ⚙️ *SYSTEM INFORMATION*
-*└───────────────────┘*
-* 💾 *RAM Usage:* ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB*
-* 🚀 *Speed:* Fast & Stable*
-* 🌐 *Status:* Active & Online*
-
-> *LAKSHAN-MD WhatsApp Bot is ready to use! Enjoy.* ✨
+*⚙️ SYSTEM INFORMATION*
+* 💾 RAM Usage:* ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB
+* 🚀 Speed:* Fast & Stable
+* 🌐 Status:* Active & Online
 `;
 
-                await sock.sendMessage(ownerJid, {
-                    image: { url: 'https://i.ibb.co/7xtcf5Vv/file-0000000002d48230a5ad48cf94c182d7.png' },
-                    caption: connectMsg
-                });
-            } catch (err) {
-                console.error('❌ Connect message error:', err.message);
-            }
-
-            const userJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-            await delay(3000);
-            await uploadSessionToMega(userJid);
-        }
-    });
-
-    // 📩 INCOMING MESSAGES HANDLER
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-        const msg = messages[0];
-        if (!msg || !msg.message) return;
-
-        const from = msg.key.remoteJid;
-        const body = msg.message.conversation || 
-                     msg.message.extendedTextMessage?.text || 
-                     msg.message.imageMessage?.caption || 
-                     msg.message.videoMessage?.caption || '';
-
-        const trimmedBody = body.trim();
-        if (!trimmedBody) return;
-
-        // -------------------------------------------------------------
-        // 1. FIRST CHECK: ONTEXT LISTENERS (FOR DIRECT REPLIES LIKE 1, 2)
-        // -------------------------------------------------------------
-        for (const [_, plugin] of commands) {
-            if (typeof plugin.onText === 'function') {
-                try {
-                    const handled = await plugin.onText(sock, msg, from, trimmedBody);
-                    if (handled) return; // Number එක අල්ලගත්තා නම් ඊළඟ Commands Check කරන්නේ නැත
+                    await sock.sendMessage(ownerJid, {
+                        image: { url: 'https://i.ibb.co/7xtcf5Vv/file-0000000002d48230a5ad48cf94c182d7.png' },
+                        caption: connectMsg
+                    });
                 } catch (err) {
-                    console.error(`❌ Error in onText handler:`, err.message);
+                    console.error('❌ Connect message error:', err.message);
+                }
+
+                const userJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                await delay(3000);
+                await uploadSessionToMega(userJid);
+            }
+        });
+
+        // 📩 Messages Handler
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type !== 'notify') return;
+            const msg = messages[0];
+            if (!msg || !msg.message) return;
+
+            const from = msg.key.remoteJid;
+            const body = msg.message.conversation || 
+                         msg.message.extendedTextMessage?.text || 
+                         msg.message.imageMessage?.caption || 
+                         msg.message.videoMessage?.caption || '';
+
+            const trimmedBody = body.trim();
+            if (!trimmedBody) return;
+
+            // 1. Check OnText Listeners
+            for (const [_, plugin] of commands) {
+                if (typeof plugin.onText === 'function') {
+                    try {
+                        const handled = await plugin.onText(sock, msg, from, trimmedBody);
+                        if (handled) return;
+                    } catch (err) {
+                        console.error(`❌ Error in onText handler:`, err.message);
+                    }
                 }
             }
-        }
 
-        // -------------------------------------------------------------
-        // 2. SECOND CHECK: COMMAND HANDLER (e.g. .lakvision aladin)
-        // -------------------------------------------------------------
-        if (!trimmedBody.startsWith(PREFIX)) return;
+            // 2. Check Command
+            if (!trimmedBody.startsWith(PREFIX)) return;
 
-        console.log(`📩 Command: ${trimmedBody} from ${from}`);
+            const args = trimmedBody.slice(PREFIX.length).trim().split(/ +/);
+            const cmdName = args.shift().toLowerCase();
 
-        const args = trimmedBody.slice(PREFIX.length).trim().split(/ +/);
-        const cmdName = args.shift().toLowerCase();
-
-        // Check command or alias
-        let plugin = commands.get(cmdName);
-        if (!plugin) {
-            for (const [_, p] of commands) {
-                if (p.alias && p.alias.includes(cmdName)) {
-                    plugin = p;
-                    break;
+            let plugin = commands.get(cmdName);
+            if (!plugin) {
+                for (const [_, p] of commands) {
+                    if (p.alias && p.alias.includes(cmdName)) {
+                        plugin = p;
+                        break;
+                    }
                 }
             }
-        }
 
-        if (plugin && typeof plugin.handler === 'function') {
-            try {
-                await plugin.handler(sock, msg, from, args, { BOT_NAME, PREFIX, commands });
-            } catch (err) {
-                console.error(`❌ Error in ${cmdName}:`, err.message);
-                await sock.sendMessage(from, { text: `❌ Error: ${err.message}` }, { quoted: msg });
+            if (plugin && typeof plugin.handler === 'function') {
+                try {
+                    await plugin.handler(sock, msg, from, args, { BOT_NAME, PREFIX, commands });
+                } catch (err) {
+                    console.error(`❌ Error in ${cmdName}:`, err.message);
+                    await sock.sendMessage(from, { text: `❌ Error: ${err.message}` }, { quoted: msg });
+                }
             }
-        }
-    });
+        });
+
+    } catch (botErr) {
+        console.error("❌ Start Bot Fatal Error:", botErr.message);
+    }
 }
 
 // 🌐 Pairing Web Interface
@@ -347,11 +343,15 @@ app.get('/pair', async (req, res) => {
             return res.json({ error: 'Already connected!' });
         }
     } catch (err) {
-        return res.status(500).json({ error: 'Pairing failed' });
+        console.error("Pairing Error:", err.message);
+        return res.status(500).json({ error: 'Pairing failed. Try again.' });
     }
 });
 
+// 🌐 Start Server first to prevent Heroku H10 Timeout Error
 app.listen(PORT, () => {
-    console.log(`🌐 Server active on ${PORT}`);
-    startBot();
+    console.log(`🌐 Web Server active on port ${PORT}`);
+    setTimeout(() => {
+        startBot();
+    }, 1000);
 });
