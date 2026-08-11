@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@whiskeysockets/baileys":"7.0.0-rc13",
-    "@adiwajshing/keyed-db": "^0.2.4",
     "pino": "latest",
     "pm2": "latest",
     "util": "latest",
@@ -31,7 +30,10 @@
     "gifted-dls":"latest",
     "yt-search":"2.13.1",
     "sadaslk-dlcore":"latest",
-    "megajs": "^1.3.4"
+    "megajs": "^1.3.4",
+    "archiver": "^6.0.1",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5"
 
 
 
