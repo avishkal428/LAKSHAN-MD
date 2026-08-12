@@ -10,27 +10,47 @@ Browsers
 
 const { getBuffer, getGroupAdmins, getRandom, h2k, isUrl, Json, runtime, sleep, fetchJson } = require('./lib/functions')
 const fs = require('fs')
+const path = require('path')
 const P = require('pino')
 const config = require('./config')
 const qrcode = require('qrcode-terminal')
 const util = require('util')
-const { sms,downloadMediaMessage } = require('./lib/msg')
+const { sms, downloadMediaMessage } = require('./lib/msg')
 const axios = require('axios')
-const { File } = require('megajs')
 const prefix = '.'
 
 const ownerNumber = ['94725337806']
+const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 
-//===================SESSION-AUTH============================
-if (!fs.existsSync(__dirname + '/auth_info_baileys/creds.json')) {
-if(!config.SESSION_ID) return console.log('Please add your session to SESSION_ID env !!')
-const sessdata = config.SESSION_ID
-const filer = File.fromURL(`https://mega.nz/file/${sessdata}`)
-filer.download((err, data) => {
-if(err) throw err
-fs.writeFile(__dirname + '/auth_info_baileys/creds.json', data, () => {
-console.log("Session downloaded ✅")
-})})}
+//===================DIRECT SESSION-AUTH (Base64)============================
+function restoreSessionFromEnv() {
+    if (!config.SESSION_ID) {
+        console.log('Please add your session to SESSION_ID env !!')
+        return false;
+    }
+
+    try {
+        if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+
+        // BOT_NAME prefix එකක් තිබේ නම් (උදා: LKSHAN-MD~) එය ඉවත් කර Base64 String එක JSON බවට පත් කරයි
+        const rawSession = config.SESSION_ID;
+        const base64Data = rawSession.includes('~') ? rawSession.split('~')[1] : rawSession;
+        const jsonString = Buffer.from(base64Data, 'base64').toString('utf-8');
+        const credsData = JSON.parse(jsonString);
+
+        fs.writeFileSync(path.join(AUTH_DIR, 'creds.json'), JSON.stringify(credsData, null, 2));
+        console.log("Session restored successfully ✅");
+        return true;
+    } catch (err) {
+        console.error("❌ Session restore error:", err.message);
+        return false;
+    }
+}
+
+// Session එක නොමැති නම් පමණක් Restore කිරීම
+if (!fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
+    restoreSessionFromEnv();
+}
 
 const express = require("express");
 const app = express();
@@ -40,7 +60,7 @@ const port = process.env.PORT || 8000;
 
 async function connectToWA() {
 console.log("Connecting wa bot 🧬...");
-const { state, saveCreds } = await useMultiFileAuthState(__dirname + '/auth_info_baileys/')
+const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
 var { version } = await fetchLatestBaileysVersion()
 
 const conn = makeWASocket({
@@ -60,7 +80,6 @@ connectToWA()
 }
 } else if (connection === 'open') {
 console.log('😼 Installing... ')
-const path = require('path');
 fs.readdirSync("./plugins/").forEach((plugin) => {
 if (path.extname(plugin).toLowerCase() == ".js") {
 require("./plugins/" + plugin);
