@@ -6,10 +6,9 @@ const cheerio = require("cheerio");
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const DEFAULT_FOOTER = "\n\n> *Powered by LASHAN-MD & CINEVIBES LK*";
 
-// Global Active Sessions Store
+// Global Active Sessions
 const movieSessions = new Map();
 
-// Helper Functions
 function clearSession(jid) {
     if (movieSessions.has(jid)) {
         const session = movieSessions.get(jid);
@@ -38,7 +37,7 @@ function formatCast(cast) {
     return cast.slice(0, 3).map(actor => `• ${actor.name} as ${actor.character || 'Unknown'}`).join('\n');
 }
 
-// Fallback Scraper for Web Details
+// Direct Web Details Fallback
 async function getMovieDetails(movieUrl) {
     try {
         const { data } = await axios.get(movieUrl, {
@@ -66,7 +65,7 @@ async function getMovieDetails(movieUrl) {
     }
 }
 
-// 1. MAIN SEARCH COMMAND (.movie)
+// 1. SEARCH COMMAND
 cmd({
     pattern: "movie",
     alias: ["ss", "sub", "sinhalasub", "minfo"],
@@ -84,7 +83,7 @@ cmd({
         try {
             rawResults = await scraper.searchSinhalaSub(q);
         } catch (e) {
-            console.error("Scraper Search Error:", e);
+            console.error("Scraper Error:", e);
             return reply("❌ Failed to fetch data from SinhalaSub. Try again later." + DEFAULT_FOOTER);
         }
 
@@ -92,7 +91,6 @@ cmd({
             return reply("❌ No movies found for your search term." + DEFAULT_FOOTER);
         }
 
-        // Clean useless category links
         const results = rawResults.filter(item => {
             if (!item.title || !item.link) return false;
             const titleLower = item.title.toLowerCase();
@@ -113,17 +111,22 @@ cmd({
         });
         msg += "\n💬 *Reply with the number (1-10) to select the movie.*" + DEFAULT_FOOTER;
 
-        // Clear existing user sessions
         clearSession(sender);
 
-        // Auto timeout after 5 minutes
+        const sentMsg = await conn.sendMessage(from, { text: msg }, { quoted: mek });
+
         const timeout = setTimeout(() => {
             clearSession(sender);
         }, 5 * 60 * 1000);
 
-        movieSessions.set(sender, { step: "WAITING_MOVIE_SELECTION", results, timeout, from });
-
-        await reply(msg);
+        // Message ID එක සේව් කරගන්නවා Quoted Reply අල්ලගන්න
+        movieSessions.set(sender, { 
+            step: "WAITING_MOVIE_SELECTION", 
+            results, 
+            timeout, 
+            from,
+            lastMsgId: sentMsg.key.id 
+        });
 
     } catch (error) {
         console.error("Movie command error:", error);
@@ -131,19 +134,19 @@ cmd({
     }
 });
 
-// 2. INTERACTIVE NUMBER REPLY HANDLER
+// 2. REPLY HANDLER (Direct Message + Quoted Reply Both Supported)
 cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
     try {
-        // User එකට Active Session එකක් තියෙනවද බලන්න
         if (!movieSessions.has(sender)) return;
         const session = movieSessions.get(sender);
 
-        const input = body ? body.trim() : "";
-        if (!input || isNaN(input)) return; // 숫자가 නොවන අකුරු / Commands Ignore කිරීම
+        // Get text from normal body or quoted body
+        const textMsg = body ? body.trim() : "";
+        if (!textMsg || isNaN(textMsg)) return;
 
-        // STEP 1: Movie Number (1-10) එක Reply කළ විට
+        // STEP 1: Handling Movie Number Selection
         if (session.step === "WAITING_MOVIE_SELECTION") {
-            const choice = parseInt(input);
+            const choice = parseInt(textMsg);
             if (choice < 1 || choice > session.results.length) {
                 return reply(`❌ Invalid choice. Reply with a number between 1 and ${session.results.length}.`);
             }
@@ -151,17 +154,15 @@ cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
             const selectedMovie = session.results[choice - 1];
             await reply("⏳ *Fetching detailed movie info & download qualities...*");
 
-            // Scraper Direct Download Links
             let downloadLinks = [];
             try {
                 downloadLinks = await scraper.getMovieLinks(selectedMovie.link);
             } catch (err) {
-                console.log("Error getting download links:", err);
+                console.log("Download Links Error:", err);
             }
 
             let webDetails = await getMovieDetails(selectedMovie.link);
 
-            // Fetch Additional Rich Details from TMDB API
             let tmdbDetails = null;
             try {
                 const tmdbSearch = await axios.get(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(selectedMovie.title)}`);
@@ -186,7 +187,6 @@ cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
                 downloadsText += `*${idx + 1}️⃣* ${dl.quality || dl.label || "Direct Link"} (${dl.size || "HD"})\n`; 
             });
 
-            // Combine details cleanly
             const title = tmdbDetails?.title || webDetails.title || selectedMovie.title;
             const releaseDate = tmdbDetails?.release_date || webDetails.release;
             const year = releaseDate && releaseDate !== 'N/A' ? `(${new Date(releaseDate).getFullYear()})` : '';
@@ -217,7 +217,6 @@ cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
                 `💬 *Reply with the quality number (1-${availableQualities.length}) to download.*` +
                 DEFAULT_FOOTER;
 
-            // Session Timeout Extension
             if (session.timeout) clearTimeout(session.timeout);
             session.timeout = setTimeout(() => {
                 clearSession(sender);
@@ -233,9 +232,9 @@ cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
                 await reply(detailsCard);
             }
         } 
-        // STEP 2: Quality Number (1, 2 හෝ 3) Reply කළ විට Movie File එක Send වීම
+        // STEP 2: Handling Quality Selection & Sending Document
         else if (session.step === "WAITING_QUALITY_SELECTION") {
-            const choice = parseInt(input);
+            const choice = parseInt(textMsg);
             if (choice < 1 || choice > session.availableQualities.length) {
                 return reply(`❌ Invalid choice. Reply with a number between 1 and ${session.availableQualities.length}.`);
             }
@@ -257,6 +256,6 @@ cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
     } catch (error) {
         console.error("Interactive handler error:", error);
         clearSession(sender);
-        await reply("❌ An error occurred while processing: " + error.message + DEFAULT_FOOTER);
+        await reply("❌ An error occurred: " + error.message + DEFAULT_FOOTER);
     }
 });
