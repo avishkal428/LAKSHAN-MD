@@ -1,224 +1,138 @@
-const { cmd } = require("../command");
+const { cmd } = require("../lib/command");
+const scraper = require("liyanaarachchi-sinhalasub-scraper-v2");
 const axios = require("axios");
+const cheerio = require("cheerio");
 
-const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
-const movieSessions = new Map();
+const sessions = new Map();
+const DEFAULT_FOOTER = "\n\n> *Powered by LASHAN-MD*";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function truncateText(text, length) {
-    return text.length > length ? text.substring(0, length) + '...' : text;
-}
-
-function formatLanguage(langCode) {
-    const languages = {
-        en: 'English', es: 'Spanish', fr: 'French',
-        de: 'German', ja: 'Japanese', ko: 'Korean',
-        hi: 'Hindi', cn: 'Chinese', ru: 'Russian', ta: 'Tamil'
-    };
-    return languages[langCode] || langCode.toUpperCase();
-}
-
-function formatCast(cast) {
-    if (!cast?.length) return 'N/A';
-    return cast.slice(0, 3)
-        .map(a => `• ${a.name} as ${a.character || 'Unknown'}`)
-        .join('\n');
-}
-
-// ── Global reply handler (registered ONCE per connection) ─────────────────────
-const handleMovieReply = async (conn, mekInfo) => {
-    if (!mekInfo?.message) return;
-
-    const messageType =
-        mekInfo.message?.conversation ||
-        mekInfo.message?.extendedTextMessage?.text;
-    if (!messageType) return;
-
-    const isReply = !!mekInfo.message?.extendedTextMessage?.contextInfo?.stanzaId;
-    if (!isReply) return;
-
-    const stanzaId = mekInfo.message.extendedTextMessage.contextInfo.stanzaId;
-    const from     = mekInfo.key.remoteJid;
-    const sender   = mekInfo.key.participant || from;
-
-    const session = movieSessions.get(sender);
-    if (!session)              return;
-    if (session.from !== from) return;
-    if (session.messageId !== stanzaId) return; // must reply to THIS search result
-
-    if (Date.now() - session.timestamp > 300000) {
-        movieSessions.delete(sender);
-        await conn.sendMessage(from, { text: "❌ Session expired. Please search again." });
-        return;
+// Helper functions
+function clearSession(jid) {
+    if (sessions.has(jid)) {
+        const session = sessions.get(jid);
+        if (session.timeout) clearTimeout(session.timeout);
+        sessions.delete(jid);
     }
+}
 
-    const userReply = messageType.trim().toUpperCase();
-    let item, isMovie, detailsUrl;
+function getMimeType(url) {
+    const ext = url.split(".").pop().split("?")[0].toLowerCase();
+    return ext === "mp4" ? "video/mp4" : "video/x-matroska";
+}
 
-    if (userReply.startsWith("M")) {
-        const index = parseInt(userReply.replace("M", "")) - 1;
-        if (isNaN(index) || index < 0 || index >= session.movies.length)
-            return conn.sendMessage(from, { text: "❌ Invalid movie selection!" });
-        item = session.movies[index];
-        isMovie = true;
-        detailsUrl = `https://api.themoviedb.org/3/movie/${item.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,release_dates,videos`;
-    } else if (userReply.startsWith("T")) {
-        const index = parseInt(userReply.replace("T", "")) - 1;
-        if (isNaN(index) || index < 0 || index >= session.tvShows.length)
-            return conn.sendMessage(from, { text: "❌ Invalid TV show selection!" });
-        item = session.tvShows[index];
-        isMovie = false;
-        detailsUrl = `https://api.themoviedb.org/3/tv/${item.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
-    } else {
-        return conn.sendMessage(from, { text: "❌ Invalid selection! Use M1, T1, etc." });
-    }
-
-    movieSessions.delete(sender); // consume session immediately
-
-    // "Fetching..." placeholder — keep ref outside try so catch can edit it
-    let fetchingMsg = null;
-
+// Scraper functions (SinhalaSub)
+async function getMovieDetails(movieUrl) {
     try {
-        fetchingMsg = await conn.sendMessage(from, { text: "⏳ Fetching details..." }, { quoted: mekInfo });
+        const { data } = await axios.get(movieUrl, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" }
+        });
+        const $ = cheerio.load(data);
 
-        const detailsRes = await axios.get(detailsUrl);
-        const details    = detailsRes.data;
+        const title = $("div.mvic-desc h3").text().trim() || $("h1.entry-title").text().trim() || "Unknown";
+        const poster = $("div.mvic-thumb img").attr("src") || $("div.thumb img").attr("src") || "";
+        
+        let details = { title, poster, release: "N/A", country: "N/A", duration: "N/A", genres: "N/A", director: "N/A", rating: "N/A", quality: "N/A" };
 
-        const trailer     = details.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
-        const trailerLink = trailer ? `🎥 *Trailer:* https://youtu.be/${trailer.key}\n` : '';
+        $("div.mvic-info p, div.mvici-right p").each((_, el) => {
+            const text = $(el).text();
+            if (text.includes("Country:")) details.country = text.replace("Country:", "").trim();
+            if (text.includes("Release:")) details.release = text.replace("Release:", "").trim();
+            if (text.includes("Duration:")) details.duration = text.replace("Duration:", "").trim();
+            if (text.includes("Genre:")) details.genres = text.replace("Genre:", "").trim();
+            if (text.includes("Director:")) details.director = text.replace("Director:", "").trim();
+            if (text.includes("IMDb:")) details.rating = text.replace("IMDb:", "").trim();
+            if (text.includes("Quality:")) details.quality = text.replace("Quality:", "").trim();
+        });
+        return details;
+    } catch (e) { return { title: "Unknown", poster: "", release: "N/A", country: "N/A", duration: "N/A", genres: "N/A", director: "N/A", rating: "N/A", quality: "N/A" }; }
+}
 
-        const title       = isMovie ? details.title : details.name;
-        const releaseDate = isMovie ? details.release_date : details.first_air_date;
-        const year        = releaseDate ? `(${new Date(releaseDate).getFullYear()})` : '';
-        const runtime     = isMovie
-            ? details.runtime ? `${Math.floor(details.runtime / 60)}h ${details.runtime % 60}m` : 'N/A'
-            : details.episode_run_time?.length ? `${details.episode_run_time[0]}m` : 'N/A';
+// Main Command
+cmd({
+    pattern: "sinhalasub",
+    alias: ["ss", "sub"],
+    desc: "Search and download movies from SinhalaSub",
+    category: "movie",
+    react: "🎬",
+    filename: __filename
+}, async (conn, mek, m, { from, q, reply, sender }) => {
+    if (!q) return reply("❌ Please provide a movie name to search.");
+    
+    const searchResults = await scraper.searchSinhalaSub(q);
+    if (!searchResults || searchResults.length === 0) return reply("❌ No movies found.");
 
-        const caption =
-            `🎬 *${title}* ${year} ${isMovie ? '[Movie]' : '[TV Show]'}\n\n` +
-            `⭐ *Rating:* ${details.vote_average?.toFixed(1) || 'N/A'} / 10 (${details.vote_count?.toLocaleString() || 0} votes)\n` +
-            `⌛ *Runtime:* ${runtime}\n` +
-            `🗓️ *Release Date:* ${releaseDate || 'N/A'}\n` +
-            `🌐 *Language:* ${formatLanguage(details.original_language)}\n\n` +
-            `🎭 *Genres:* ${details.genres?.map(g => g.name).join(', ') || 'N/A'}\n\n` +
-            `👥 *Cast:*\n${formatCast(details.credits?.cast)}\n\n` +
-            `📖 *Plot:* ${details.overview || 'No description available'}\n\n` +
-            `${trailerLink}\n` +
-            `*𝙲𝙸𝙽𝙴𝚅𝙸𝙱𝙴𝚂 𝙻𝙺 𝙾𝙵𝙵𝙸𝙲𝙸𝙰𝙻*`;
+    const results = searchResults.slice(0, 10);
+    let msg = "🔎 *SINHALASUB SEARCH RESULTS*\n\n";
+    results.forEach((item, index) => { msg += `*${index + 1}.* ${item.title}\n`; });
+    msg += "\n💬 *Reply with the number to select the movie.*" + DEFAULT_FOOTER;
 
-        const posterPath = details.poster_path
-            ? `https://image.tmdb.org/t/p/w780${details.poster_path}`
-            : 'https://i.ibb.co/7QZqD0B/movie.png';
+    clearSession(sender);
+    sessions.set(sender, { step: "WAITING_MOVIE_SELECTION", results });
+    
+    await reply(msg);
+});
+
+// Interactive Handler
+cmd({ on: "text" }, async (conn, mek, m, { from, reply, sender }) => {
+    if (!sessions.has(sender)) return;
+    const session = sessions.get(sender);
+    const body = m.text ? m.text.trim() : "";
+
+    // Step 1: User picks movie
+    if (session.step === "WAITING_MOVIE_SELECTION") {
+        const choice = parseInt(body);
+        if (isNaN(choice) || choice < 1 || choice > session.results.length) return reply("❌ Invalid choice.");
+
+        const selectedMovie = session.results[choice - 1];
+        const [downloadLinks, details] = await Promise.all([
+            scraper.getMovieLinks(selectedMovie.link),
+            getMovieDetails(selectedMovie.link)
+        ]);
+
+        if (!downloadLinks || downloadLinks.length === 0) return reply("❌ No download links found.");
+
+        let downloadsText = "";
+        downloadLinks.forEach((dl, idx) => { downloadsText += `*${idx + 1}️⃣* ${dl.label}\n`; });
+
+        const detailsCard = 
+            `🎬 *${details.title}*\n\n` +
+            `⭐ *Rating:* ${details.rating}\n` +
+            `🗓️ *Release:* ${details.release}\n` +
+            `⌛ *Duration:* ${details.duration}\n` +
+            `🎭 *Genres:* ${details.genres}\n` +
+            `👨🏻‍💼 *Director:* ${details.director}\n` +
+            `🎞️ *Quality:* ${details.quality}\n\n` +
+            `━━━━━━━━━━━━━━━━━━\n\n` +
+            `📥 *AVAILABLE DOWNLOADS*\n\n` +
+            `${downloadsText}\n` +
+            `💬 *Reply with the number to download.*` +
+            DEFAULT_FOOTER;
+
+        session.step = "WAITING_QUALITY_SELECTION";
+        session.selectedMovieTitle = details.title;
+        session.downloadLinks = downloadLinks;
+
+        if (details.poster) {
+            await conn.sendMessage(from, { image: { url: details.poster }, caption: detailsCard }, { quoted: mek });
+        } else {
+            await reply(detailsCard);
+        }
+    } 
+    // Step 2: User picks quality
+    else if (session.step === "WAITING_QUALITY_SELECTION") {
+        const choice = parseInt(body);
+        if (isNaN(choice) || choice < 1 || choice > session.downloadLinks.length) return reply("❌ Invalid quality selection.");
+
+        const selectedDl = session.downloadLinks[choice - 1];
+        await reply("📥 *Downloading... Please wait.*");
 
         await conn.sendMessage(from, {
-            image:   { url: posterPath },
-            caption: caption,
-            mimetype: 'image/jpeg',
-            contextInfo: {
-                externalAdReply: {
-                    title,
-                    body: `⭐ ${details.vote_average?.toFixed(1) || 'N/A'} | ${releaseDate?.slice(0, 4) || ''}`,
-                    thumbnailUrl: posterPath,
-                    mediaType: 1
-                }
-            }
-        }, { quoted: mekInfo });
-
-        // Edit placeholder to success
-        await conn.sendMessage(from, { text: '✅ Details Fetched Successfully', edit: fetchingMsg.key });
-
-    } catch (error) {
-        console.error("Movie details error:", error);
-        if (fetchingMsg) {
-            await conn.sendMessage(from, {
-                text: `❌ *An error occurred:* ${error.message || "Error!"}`,
-                edit: fetchingMsg.key
-            });
-        }
-    }
-};
-
-// ── !minfo command ────────────────────────────────────────────────────────────
-cmd({
-    pattern:  "minfo",
-    alias:    ["film", "moviedetails"],
-    desc:     "Search and get detailed movie or TV show information with trailer",
-    category: "search",
-    react:    "🎬",
-    filename: __filename
-}, async (conn, m, mek, { from, sender, q, reply }) => {
-    try {
-        if (!q) return reply("❌ Please provide a movie or TV show name!");
-
-        const searchRes = await axios.get(
-            `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(q)}`
-        );
-
-        if (!searchRes.data?.results?.length)
-            return reply("❌ No movies or TV shows found with that name!");
-
-        const movies  = searchRes.data.results.filter(i => i.media_type === "movie");
-        const tvShows = searchRes.data.results.filter(i => i.media_type === "tv");
-
-        let resultList = `🎬 *Search Results for "${q}"* 🎬\n\n`;
-
-        if (movies.length) {
-            resultList += `🎥 *Movies* 🎥\n`;
-            movies.forEach((movie, i) => {
-                const year = movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A';
-                resultList += `*M${i + 1}.* ${movie.title}${year !== 'N/A' ? ` (${year})` : ''}\n`;
-                if (movie.overview) resultList += `   📝 ${truncateText(movie.overview, 50)}\n\n`;
-            });
-        } else {
-            resultList += `🎥 *Movies* 🎥\nNo movies found.\n\n`;
-        }
-
-        if (tvShows.length) {
-            resultList += `📺 *TV Shows* 📺\n`;
-            tvShows.forEach((tv, i) => {
-                const year = tv.first_air_date ? new Date(tv.first_air_date).getFullYear() : 'N/A';
-                resultList += `*T${i + 1}.* ${tv.name}${year !== 'N/A' ? ` (${year})` : ''}\n`;
-                if (tv.overview) resultList += `   📝 ${truncateText(tv.overview, 50)}\n\n`;
-            });
-        } else {
-            resultList += `📺 *TV Shows* 📺\nNo TV shows found.\n\n`;
-        }
-
-        resultList += `🔢 *Reply with the code (e.g., M1 for movie, T1 for TV show) to select*`;
-
-        const sentMsg = await conn.sendMessage(from, {
-            text: resultList,
-            contextInfo: {
-                externalAdReply: {
-                    title:        "🎥 Movie & TV Search",
-                    body:         `Results for: ${q}`,
-                    thumbnailUrl: "https://i.ibb.co/7QZqD0B/movie.png",
-                    mediaType:    1
-                }
-            }
+            document: { url: selectedDl.link },
+            mimetype: getMimeType(selectedDl.link),
+            fileName: `${session.selectedMovieTitle}.mp4`,
+            caption: `🎬 ${session.selectedMovieTitle}\n\n${DEFAULT_FOOTER}`
         }, { quoted: mek });
 
-        // Save session with `from` to prevent cross-chat matches
-        movieSessions.set(sender, {
-            timestamp: Date.now(),
-            movies,
-            tvShows,
-            messageId: sentMsg.key.id,
-            from,                        // ← fix: store chat JID
-        });
-
-        // Register handler ONCE per connection (not on every command call)
-        if (!conn._movieHandlerRegistered) {
-            conn.ev.on('messages.upsert', ({ messages }) => {
-                const msg = messages[0];
-                if (msg && !msg.key.fromMe) handleMovieReply(conn, msg);
-            });
-            conn._movieHandlerRegistered = true;
-        }
-
-    } catch (error) {
-        console.error("Movie search error:", error);
-        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-        reply(`❌ *An error occurred:* ${error.message || "Error!"}`);
+        clearSession(sender);
     }
 });
