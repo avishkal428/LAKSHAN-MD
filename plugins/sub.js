@@ -95,7 +95,7 @@ cmd(
                         return await reply(`❌ Invalid choice. Please select between 1 and ${session.results.length}.`);
                     }
 
-                    if (m.react) await m.react("📋");
+                    if (m.react) await m.react("");
                     const selectedMovie = session.results[choice - 1];
 
                     let downloadLinks = [];
