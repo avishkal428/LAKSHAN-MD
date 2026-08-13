@@ -21,7 +21,7 @@ cmd({
 │ ⏰ *Uptime*: ${runtime(process.uptime())}
 │
 ╰───────────────────╯
-> *POWERED BY MOVIEHUB-DL BOT*`;
+> *POWERED BY LAKSHAN-MD BOT*`;
 
         await reply(status);
 
