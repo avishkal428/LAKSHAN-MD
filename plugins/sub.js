@@ -3,10 +3,10 @@ const scraper = require("liyanaarachchi-sinhalasub-scraper-v2");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
+// User Sessions මතක තබා ගැනීමට
 const sessions = new Map();
 const DEFAULT_FOOTER = "\n\n> *Powered by LASHAN-MD*";
 
-// Helper functions
 function clearSession(jid) {
     if (sessions.has(jid)) {
         const session = sessions.get(jid);
@@ -20,11 +20,14 @@ function getMimeType(url) {
     return ext === "mp4" ? "video/mp4" : "video/x-matroska";
 }
 
-// Scraper functions (SinhalaSub)
+// Web scraping for movie details
 async function getMovieDetails(movieUrl) {
     try {
         const { data } = await axios.get(movieUrl, {
-            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" }
+            headers: { 
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" 
+            },
+            timeout: 10000
         });
         const $ = cheerio.load(data);
 
@@ -49,7 +52,7 @@ async function getMovieDetails(movieUrl) {
     }
 }
 
-// Main Command
+// .movie Command එක
 cmd({
     pattern: "movie",
     alias: ["ss", "sub", "sinhalasub"],
@@ -61,60 +64,88 @@ cmd({
     try {
         if (!q) return reply("❌ Please provide a movie name to search.");
         
-        const searchResults = await scraper.searchSinhalaSub(q);
-        if (!searchResults || searchResults.length === 0) return reply("❌ No movies found.");
+        await reply("🔎 *Searching for movies... Please wait.*");
 
-        const results = searchResults.slice(0, 10);
+        const rawResults = await scraper.searchSinhalaSub(q);
+        
+        if (!rawResults || rawResults.length === 0) {
+            return reply("❌ No movies found for your search term." + DEFAULT_FOOTER);
+        }
+
+        // වැරදි Header/Menu Links අයින් කර ෆිල්ම් විතරක් Filter කරගැනීම
+        const results = rawResults.filter(item => 
+            item.title && 
+            !item.title.toLowerCase().includes("movie lanuage") && 
+            !item.title.toLowerCase().includes("tv shows") &&
+            !item.title.toLowerCase().includes("genre")
+        ).slice(0, 10);
+
+        if (results.length === 0) {
+            return reply("❌ No valid movie titles found." + DEFAULT_FOOTER);
+        }
+
         let msg = "🔎 *SINHALASUB SEARCH RESULTS*\n\n";
-        results.forEach((item, index) => { msg += `*${index + 1}.* ${item.title}\n`; });
+        results.forEach((item, index) => { 
+            msg += `*${index + 1}.* ${item.title}\n`; 
+        });
         msg += "\n💬 *Reply with the number to select the movie.*" + DEFAULT_FOOTER;
 
         clearSession(sender);
         
+        // විනාඩි 5ක timeout එකක් තැබීම
         const timeout = setTimeout(() => {
             if (sessions.has(sender)) {
                 sessions.delete(sender);
-                reply("⏱️ Session expired due to inactivity." + DEFAULT_FOOTER).catch(() => {});
             }
         }, 5 * 60 * 1000);
 
-        sessions.set(sender, { step: "WAITING_MOVIE_SELECTION", results, timeout });
+        sessions.set(sender, { step: "WAITING_MOVIE_SELECTION", results, timeout, from });
         
         await reply(msg);
     } catch (error) {
         console.error("Movie search error:", error);
-        await reply("❌ An error occurred while searching." + DEFAULT_FOOTER);
+        await reply("❌ An error occurred while searching: " + error.message + DEFAULT_FOOTER);
     }
 });
 
-// Interactive Handler
-cmd({ on: "text" }, async (conn, mek, m, { from, reply, sender }) => {
+// User දාන 1, 2, 3 වගේ Numbers අල්ලා ගන්නා Event Handler එක
+cmd({ on: "body" }, async (conn, mek, m, { from, reply, sender, body }) => {
     try {
         if (!sessions.has(sender)) return;
         const session = sessions.get(sender);
-        const body = m.text ? m.text.trim() : "";
+        
+        const input = body ? body.trim() : "";
+        if (!input || isNaN(input)) return; // ඉලක්කමක් නෙමේ නම් Ignore කරයි
 
-        // Step 1: User picks movie
+        // Step 1: චිත්‍රපටය තෝරා ගැනීම
         if (session.step === "WAITING_MOVIE_SELECTION") {
-            const choice = parseInt(body);
-            if (isNaN(choice) || choice < 1 || choice > session.results.length) return reply("❌ Invalid choice.");
+            const choice = parseInt(input);
+            if (choice < 1 || choice > session.results.length) {
+                return reply(`❌ Invalid choice. Please reply with a number between 1 and ${session.results.length}.`);
+            }
 
             const selectedMovie = session.results[choice - 1];
+            await reply("⏳ *Fetching movie details & download links...*");
+
             const [downloadLinks, details] = await Promise.all([
-                scraper.getMovieLinks(selectedMovie.link),
+                scraper.getMovieLinks(selectedMovie.link).catch(() => []),
                 getMovieDetails(selectedMovie.link)
             ]);
 
             if (!downloadLinks || downloadLinks.length === 0) {
                 clearSession(sender);
-                return reply("❌ No download links found.");
+                return reply("❌ No download links found for this movie." + DEFAULT_FOOTER);
             }
 
             let downloadsText = "";
-            downloadLinks.forEach((dl, idx) => { downloadsText += `*${idx + 1}️⃣* ${dl.label}\n`; });
+            downloadLinks.forEach((dl, idx) => { 
+                downloadsText += `*${idx + 1}️⃣* ${dl.label || "Direct Link"}\n`; 
+            });
+
+            const movieTitle = details.title !== "Unknown" ? details.title : selectedMovie.title;
 
             const detailsCard = 
-                `🎬 *${details.title}*\n\n` +
+                `🎬 *${movieTitle}*\n\n` +
                 `⭐ *Rating:* ${details.rating}\n` +
                 `🗓️ *Release:* ${details.release}\n` +
                 `⌛ *Duration:* ${details.duration}\n` +
@@ -129,14 +160,11 @@ cmd({ on: "text" }, async (conn, mek, m, { from, reply, sender }) => {
 
             if (session.timeout) clearTimeout(session.timeout);
             session.timeout = setTimeout(() => {
-                if (sessions.has(sender)) {
-                    sessions.delete(sender);
-                    reply("⏱️ Session expired due to inactivity." + DEFAULT_FOOTER).catch(() => {});
-                }
+                if (sessions.has(sender)) clearSession(sender);
             }, 5 * 60 * 1000);
 
             session.step = "WAITING_QUALITY_SELECTION";
-            session.selectedMovieTitle = details.title !== "Unknown" ? details.title : selectedMovie.title;
+            session.selectedMovieTitle = movieTitle;
             session.downloadLinks = downloadLinks;
 
             if (details.poster) {
@@ -145,18 +173,22 @@ cmd({ on: "text" }, async (conn, mek, m, { from, reply, sender }) => {
                 await reply(detailsCard);
             }
         } 
-        // Step 2: User picks quality
+        // Step 2: Download Quality එක තෝරා ගැනීම
         else if (session.step === "WAITING_QUALITY_SELECTION") {
-            const choice = parseInt(body);
-            if (isNaN(choice) || choice < 1 || choice > session.downloadLinks.length) return reply("❌ Invalid quality selection.");
+            const choice = parseInt(input);
+            if (choice < 1 || choice > session.downloadLinks.length) {
+                return reply(`❌ Invalid quality selection. Please reply between 1 and ${session.downloadLinks.length}.`);
+            }
 
             const selectedDl = session.downloadLinks[choice - 1];
-            await reply("📥 *Downloading movie... Please wait.*" + DEFAULT_FOOTER);
+            await reply("📥 *Downloading movie file... Please wait.*" + DEFAULT_FOOTER);
+
+            const safeFileName = `${session.selectedMovieTitle.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
 
             await conn.sendMessage(from, {
                 document: { url: selectedDl.link },
                 mimetype: getMimeType(selectedDl.link),
-                fileName: `${session.selectedMovieTitle.replace(/[/\\?%*:|"<>]/g, "")}.mp4`,
+                fileName: safeFileName,
                 caption: `🎬 *${session.selectedMovieTitle}*\n\n` + DEFAULT_FOOTER
             }, { quoted: mek });
 
@@ -164,6 +196,7 @@ cmd({ on: "text" }, async (conn, mek, m, { from, reply, sender }) => {
         }
     } catch (error) {
         console.error("Movie interactive handler error:", error);
+        await reply("❌ Error processing request: " + error.message + DEFAULT_FOOTER);
         clearSession(sender);
     }
 });
