@@ -3,7 +3,6 @@ const scraper = require("liyanaarachchi-sinhalasub-scraper-v2");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-
 // Map to handle user sessions
 // Key: sender JID, Value: session object
 const sessions = new Map();
@@ -18,7 +17,7 @@ function clearSession(jid) {
 }
 
 // Global Default Footer
-const DEFAULT_FOOTER = "\n\n> *Powered by LASHAN-MD*";
+const DEFAULT_FOOTER = "\n\n> *Powered by LAKSHAN-MD*";
 
 // Helper to determine mime type from URL or extension
 function getMimeType(url) {
@@ -39,7 +38,7 @@ function getMimeType(url) {
     }
 }
 
-// Scrape detailed movie info using axios and cheerio if needed
+// Scrape detailed movie info using axios and cheerio
 async function getMovieDetails(movieUrl) {
     try {
         const { data } = await axios.get(movieUrl, {
@@ -78,9 +77,7 @@ async function getMovieDetails(movieUrl) {
             if (text.includes("Duration:"))
                 duration = text.replace("Duration:", "").trim() || "Unknown";
             if (text.includes("Genre:") || text.includes("Genres:")) {
-                genres = text
-                    .replace(/Genre:|Genres:/g, "")
-                    .trim() || "Unknown";
+                genres = text.replace(/Genre:|Genres:/g, "").trim() || "Unknown";
             }
             if (text.includes("Language:"))
                 language = text.replace("Language:", "").trim() || "Unknown";
@@ -93,7 +90,6 @@ async function getMovieDetails(movieUrl) {
                 quality = text.replace("Quality:", "").trim() || "Unknown";
         });
 
-        // Fallback for year from release date or title
         if (releaseDate === "Unknown") {
             const yearMatch = title.match(/\((\d{4})\)/);
             if (yearMatch) releaseDate = yearMatch[1];
@@ -155,7 +151,6 @@ cmd(
                 return await reply("❌ No movies found." + DEFAULT_FOOTER);
             }
 
-            // Limit to max 10 results
             const results = searchResults.slice(0, 10);
 
             let msg = "━━━━━━━━━━━━━━━━━━\n\n🔎 *SINHALASUB SEARCH*\n\n";
@@ -164,10 +159,8 @@ cmd(
             });
             msg += "━━━━━━━━━━━━━━━━━━\n\n💬 Reply with the movie number." + DEFAULT_FOOTER;
 
-            // Clear any existing active session for this user
             clearSession(sender);
 
-            // Set session with 5 min timeout
             const timeout = setTimeout(() => {
                 if (sessions.has(sender)) {
                     sessions.delete(sender);
@@ -190,7 +183,7 @@ cmd(
     }
 );
 
-// Incoming message listener for interactive user selection step
+// Interactive Listener for User Replies (Numbers)
 cmd(
     {
         on: "text"
@@ -200,24 +193,24 @@ cmd(
             if (!sessions.has(sender)) return;
 
             const session = sessions.get(sender);
-            const body = m.text ? m.text.trim() : "";
+            
+            // Get text from quote reply or direct message body
+            let body = (m.body || m.text || "").trim();
 
-            // User selected a movie from search results
+            // If user replies with .prefix or other command, ignore session
+            if (body.startsWith(".") || body.startsWith("/")) return;
+
+            // Step 1: Handling Movie Selection Number
             if (session.step === "WAITING_MOVIE_SELECTION") {
                 const choice = parseInt(body);
                 if (isNaN(choice) || choice < 1 || choice > session.results.length) {
-                    if (m.react) await m.react("❌");
-                    return await reply(
-                        `❌ Invalid choice. Please reply with a number between 1 and ${session.results.length}.` +
-                            DEFAULT_FOOTER
-                    );
+                    return; // Ignore non-numeric replies
                 }
 
                 if (m.react) await m.react("📋");
 
                 const selectedMovie = session.results[choice - 1];
 
-                // Fetch direct download links using scraper
                 let downloadLinks = [];
                 try {
                     downloadLinks = await scraper.getMovieLinks(selectedMovie.link);
@@ -231,10 +224,8 @@ cmd(
                     return await reply("❌ No download links available for this movie." + DEFAULT_FOOTER);
                 }
 
-                // Fetch scraped details for metadata display
                 const details = await getMovieDetails(selectedMovie.link);
 
-                // Build download options list text
                 let downloadsText = "";
                 downloadLinks.forEach((dl, idx) => {
                     downloadsText += `${idx + 1}️⃣ ${dl.label || "Direct Link"}\n`;
@@ -259,7 +250,6 @@ cmd(
                     `💬 Reply with the quality number.` +
                     DEFAULT_FOOTER;
 
-                // Reset timeout for next input
                 if (session.timeout) clearTimeout(session.timeout);
                 session.timeout = setTimeout(() => {
                     if (sessions.has(sender)) {
@@ -272,7 +262,6 @@ cmd(
                 session.selectedMovie = { ...selectedMovie, title: movieTitle };
                 session.downloadLinks = downloadLinks;
 
-                // Send image card if poster exists, otherwise send text
                 if (details.poster && conn.sendFromUrl) {
                     await conn.sendFromUrl(from, details.poster, detailsCard, mek);
                 } else {
@@ -281,21 +270,16 @@ cmd(
                 return;
             }
 
-            // User selected quality option for download
+            // Step 2: Handling Quality Selection Number
             if (session.step === "WAITING_QUALITY_SELECTION") {
                 const choice = parseInt(body);
                 if (isNaN(choice) || choice < 1 || choice > session.downloadLinks.length) {
-                    if (m.react) await m.react("❌");
-                    return await reply(
-                        `❌ Invalid quality option. Please reply with a number between 1 and ${session.downloadLinks.length}.` +
-                            DEFAULT_FOOTER
-                    );
+                    return; // Ignore non-numeric replies
                 }
 
                 const selectedDl = session.downloadLinks[choice - 1];
                 const movieTitle = session.selectedMovie.title;
 
-                // Parse label info for caption
                 const qualityMatch = selectedDl.label.match(/\d{3,4}p/i);
                 const qualityStr = qualityMatch ? qualityMatch[0] : "HD";
 
@@ -310,7 +294,6 @@ cmd(
 
                 if (m.react) await m.react("📥");
 
-                // Notify user download is starting
                 await reply("📥 *Downloading movie file to server... Please wait.*" + DEFAULT_FOOTER);
 
                 if (m.react) await m.react("⬆️");
@@ -318,7 +301,6 @@ cmd(
                 const mimeType = getMimeType(selectedDl.link);
                 const safeFileName = `${movieTitle.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
 
-                // Upload movie file as document
                 await conn.sendMessage(
                     from,
                     {
@@ -332,7 +314,6 @@ cmd(
 
                 if (m.react) await m.react("✅");
 
-                // Delete active session on success
                 clearSession(sender);
             }
         } catch (error) {
