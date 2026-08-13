@@ -1,7 +1,8 @@
-const { cmd } = require("../lib/command");
+const { cmd, commands } = require('../command');
 const scraper = require("liyanaarachchi-sinhalasub-scraper-v2");
 const axios = require("axios");
 const cheerio = require("cheerio");
+
 
 // Map to handle user sessions
 // Key: sender JID, Value: session object
