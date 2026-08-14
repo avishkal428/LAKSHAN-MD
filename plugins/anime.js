@@ -42,7 +42,7 @@ async (socket, msg, m, { from, args }) => {
 
         results.forEach((item, index) => {
             const num = (index + 1) < 10 ? `0${index + 1}` : `${index + 1}`;
-            listText += `*${num}* ➜ 📺 _${item.title.substring(0, 35)}_\n`;
+            listText += `*${num}* ➜ 📺 _${item.title.substring(0, 1000)}_\n`;
         });
 
         listText += `${DEFAULT_FOOTER}`;
