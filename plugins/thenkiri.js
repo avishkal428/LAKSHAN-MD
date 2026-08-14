@@ -1,5 +1,4 @@
 const { cmd } = require('../command');
-// මෙතැන require කරන විදිහ වෙනස් කර ඇත:
 const thenkiri = require('liyanaarachchi-thenkiri-scrap');
 
 cmd({
@@ -27,11 +26,11 @@ async (socket, msg, m, { from, args }) => {
     });
 
     try {
-        // 1️⃣ Search Function එක තියෙන නම අනුව Auto-call කිරීම
+        // 1️⃣ Find Search Function
         const searchFn = thenkiri.search || thenkiri.searchMovie || thenkiri.getSearch || thenkiri;
         
         if (typeof searchFn !== 'function') {
-            throw new Error("Scraper search function is not found! Check package functions.");
+            throw new Error("Scraper search function not found!");
         }
 
         const searchResults = await searchFn(thenkiriQuery);
@@ -81,12 +80,27 @@ async (socket, msg, m, { from, args }) => {
                 }, { quoted: replyMek });
 
                 try {
-                    // 2️⃣ Get Details/Links Function එක පරීක්ෂා කිරීම
-                    const getLinksFn = thenkiri.getLinks || thenkiri.download || thenkiri.getDownloadLinks || thenkiri.info;
+                    // 2️⃣ Safe Get Details/Links Function Matching
+                    let getLinksFn = thenkiri.getLinks || thenkiri.getDl || thenkiri.download || thenkiri.info || thenkiri.getMovie;
+
+                    if (typeof getLinksFn !== 'function') {
+                        // Fallback: search for any function inside package if not matched above
+                        const availableFns = Object.keys(thenkiri).filter(k => typeof thenkiri[k] === 'function');
+                        if (availableFns.length > 1) {
+                            const dlFnName = availableFns.find(fn => fn !== 'search' && fn !== 'searchMovie');
+                            if (dlFnName) getLinksFn = thenkiri[dlFnName];
+                        }
+                    }
+
+                    if (typeof getLinksFn !== 'function') {
+                        throw new Error("Download links function not found in scraper package!");
+                    }
+
                     const itemLink = selectedItem.link || selectedItem.url;
-                    
                     const movieData = await getLinksFn(itemLink);
-                    const validDownloads = movieData?.links || movieData?.download || movieData || [];
+                    
+                    // Handle array or object return format
+                    const validDownloads = movieData?.links || movieData?.download || (Array.isArray(movieData) ? movieData : []);
 
                     if (!validDownloads || validDownloads.length === 0) {
                         await socket.sendMessage(sender, {
