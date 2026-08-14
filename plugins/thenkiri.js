@@ -1,5 +1,6 @@
 const { cmd } = require('../command');
-const scraper = require('liyanaarachchi-thenkiri-scrap');
+// මෙතැන require කරන විදිහ වෙනස් කර ඇත:
+const thenkiri = require('liyanaarachchi-thenkiri-scrap');
 
 cmd({
     pattern: "thenkiri",
@@ -15,7 +16,7 @@ async (socket, msg, m, { from, args }) => {
 
     if (!args.length) {
         await socket.sendMessage(sender, {
-            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*\n• .thenkiri avatar\n• .tk avatar\n\n📝 _Please provide the Movie name!_${DEFAULT_FOOTER}`
+            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*\n• .thenkiri avatar\n• .tk rrr\n\n📝 _Please provide the Movie name!_${DEFAULT_FOOTER}`
         }, { quoted: msg });
         return;
     }
@@ -26,8 +27,14 @@ async (socket, msg, m, { from, args }) => {
     });
 
     try {
-        // 1️⃣ Search Movies on Thenkiri
-        const searchResults = await scraper.search(thenkiriQuery);
+        // 1️⃣ Search Function එක තියෙන නම අනුව Auto-call කිරීම
+        const searchFn = thenkiri.search || thenkiri.searchMovie || thenkiri.getSearch || thenkiri;
+        
+        if (typeof searchFn !== 'function') {
+            throw new Error("Scraper search function is not found! Check package functions.");
+        }
+
+        const searchResults = await searchFn(thenkiriQuery);
 
         if (!searchResults || searchResults.length === 0) {
             await socket.sendMessage(sender, {
@@ -41,7 +48,8 @@ async (socket, msg, m, { from, args }) => {
 
         tkResults.forEach((item, index) => {
             const num = (index + 1) < 10 ? `0${index + 1}` : `${index + 1}`;
-            listText += `*${num}* ➜ 🎥 _${item.title.substring(0, 40)}_\n`;
+            const title = item.title || item.name || "Movie";
+            listText += `*${num}* ➜ 🎥 _${title.substring(0, 40)}_\n`;
         });
 
         listText += `${DEFAULT_FOOTER}`;
@@ -73,9 +81,12 @@ async (socket, msg, m, { from, args }) => {
                 }, { quoted: replyMek });
 
                 try {
-                    // 2️⃣ Get Download Links & Details
-                    const movieData = await scraper.getLinks(selectedItem.link);
-                    const validDownloads = movieData?.links || movieData || [];
+                    // 2️⃣ Get Details/Links Function එක පරීක්ෂා කිරීම
+                    const getLinksFn = thenkiri.getLinks || thenkiri.download || thenkiri.getDownloadLinks || thenkiri.info;
+                    const itemLink = selectedItem.link || selectedItem.url;
+                    
+                    const movieData = await getLinksFn(itemLink);
+                    const validDownloads = movieData?.links || movieData?.download || movieData || [];
 
                     if (!validDownloads || validDownloads.length === 0) {
                         await socket.sendMessage(sender, {
@@ -85,7 +96,8 @@ async (socket, msg, m, { from, args }) => {
                     }
 
                     // Movie Details Text
-                    const movieDetailsText = `*❪ MOVIE DETAILS ❫*\n\n🎬 *Title:* ${selectedItem.title}\n🗿 *Source:* thenkiri.com${DEFAULT_FOOTER}`;
+                    const itemTitle = selectedItem.title || selectedItem.name || "Movie";
+                    const movieDetailsText = `*❪ MOVIE DETAILS ❫*\n\n🎬 *Title:* ${itemTitle}\n🗿 *Source:* thenkiri.com${DEFAULT_FOOTER}`;
                     const moviePosterUrl = selectedItem.img || selectedItem.image || selectedItem.poster || DEFAULT_IMAGE;
 
                     // Send Poster Image
@@ -129,13 +141,13 @@ async (socket, msg, m, { from, args }) => {
                             try {
                                 const finalDirectLink = selectedDownload.link || selectedDownload.url;
                                 const qualityLabel = selectedDownload.quality || selectedDownload.title || 'HD';
-                                const safeFileName = `${selectedItem.title.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
+                                const safeFileName = `${itemTitle.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
 
                                 await socket.sendMessage(sender, {
                                     document: { url: finalDirectLink },
                                     mimetype: 'video/mp4',
                                     fileName: safeFileName,
-                                    caption: `*❪ MOVIE ❫*\n\n🎭 *${selectedItem.title}*\n📌 *Quality:* _${qualityLabel}_${DEFAULT_FOOTER}`
+                                    caption: `*❪ MOVIE ❫*\n\n🎭 *${itemTitle}*\n📌 *Quality:* _${qualityLabel}_${DEFAULT_FOOTER}`
                                 }, { quoted: downloadMek });
 
                                 await socket.sendMessage(sender, { react: { text: '✅', key: downloadMek.key } });
@@ -173,4 +185,3 @@ async (socket, msg, m, { from, args }) => {
         }, { quoted: msg });
     }
 });
-
