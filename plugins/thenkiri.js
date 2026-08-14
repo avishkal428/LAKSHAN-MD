@@ -70,7 +70,7 @@ async (socket, msg, m, { from, args }) => {
                 const selectedItem = tkResults[choice];
 
                 await socket.sendMessage(sender, { 
-                    text: `*❪ FETCHING ❫*\n\n🎬 *Fetching Download Options for ${selectedItem.title}...*\n⚡ _Please wait..._`
+                    text: `*❪ FETCHING ❫*\n\n🎬 *Fetching Download Options...*\n⚡ _Please wait..._`
                 }, { quoted: replyMek });
 
                 try {
@@ -93,11 +93,19 @@ async (socket, msg, m, { from, args }) => {
                         caption: movieDetailsText
                     }, { quoted: replyMek });
 
-                    // Download Options Menu
-                    const downloadOptionsText = `*❪ DOWNLOADS ❫*\n\n📥 *Select Quality / Option:*\n\n${options.map((opt, i) => {
+                    // 🛠️ Quality සහ Size පෙනෙන සේ සැකසූ Download Menu එක:
+                    let downloadOptionsText = `*❪ DOWNLOADS ❫*\n\n📥 *Select Quality / Option:*\n\n`;
+
+                    options.forEach((opt, i) => {
                         const num = (i + 1) < 10 ? `0${i + 1}` : `${i + 1}`;
-                        return `*${num}* ➜ 🎥 _${opt.name || 'Download Option'}_`;
-                    }).join('\n')}\n\n*💬 REPLY TO DOWNLOAD 💬*\n📌 _Reply with the number_${DEFAULT_FOOTER}`;
+                        // Quality එක සහ Size එක වෙන්කර ගැනීම
+                        const quality = opt.quality || opt.name || opt.title || 'HD';
+                        const size = opt.size ? ` 💾 [_${opt.size}_]` : '';
+
+                        downloadOptionsText += `*${num}* ➜ 🎥 *${quality}*${size}\n`;
+                    });
+
+                    downloadOptionsText += `\n*💬 REPLY TO DOWNLOAD 💬*\n📌 _Reply with the number_${DEFAULT_FOOTER}`;
 
                     const downloadOptionsMsg = await socket.sendMessage(sender, { text: downloadOptionsText }, { quoted: replyMek });
                     const optionsMsgID = downloadOptionsMsg.key.id;
@@ -121,6 +129,9 @@ async (socket, msg, m, { from, args }) => {
                             }
 
                             const selectedOption = options[choiceNum];
+                            const selectedQuality = selectedOption.quality || selectedOption.name || 'HD';
+                            const selectedSize = selectedOption.size ? ` | 💾 ${selectedOption.size}` : '';
+
                             await socket.sendMessage(sender, { react: { text: '⏳', key: downloadMek.key } });
 
                             try {
@@ -128,27 +139,37 @@ async (socket, msg, m, { from, args }) => {
                                 const finalDirectLink = await scraper.bypassDownloadwella(selectedOption.link);
 
                                 if (!finalDirectLink) {
-                                    throw new Error("Direct video link generation failed.");
+                                    throw new Error("Direct link could not be generated.");
                                 }
 
                                 await socket.sendMessage(sender, { react: { text: '📥', key: downloadMek.key } });
 
                                 const safeFileName = `${selectedItem.title.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
 
-                                // Send Video Document
-                                await socket.sendMessage(sender, {
-                                    document: { url: finalDirectLink },
-                                    mimetype: 'video/mp4',
-                                    fileName: safeFileName,
-                                    caption: `*❪ THENKIRI ❫*\n\n🎭 *${selectedItem.title}*\n📌 *Quality:* _${selectedOption.name || 'HD'}_${DEFAULT_FOOTER}`
-                                }, { quoted: downloadMek });
+                                try {
+                                    // Direct File Download Attempt
+                                    await socket.sendMessage(sender, {
+                                        document: { url: finalDirectLink },
+                                        mimetype: 'video/mp4',
+                                        fileName: safeFileName,
+                                        caption: `*❪ THENKIRI ❫*\n\n🎭 *${selectedItem.title}*\n📌 *Quality:* _${selectedQuality}_${selectedSize}${DEFAULT_FOOTER}`
+                                    }, { quoted: downloadMek });
 
-                                await socket.sendMessage(sender, { react: { text: '✅', key: downloadMek.key } });
+                                    await socket.sendMessage(sender, { react: { text: '✅', key: downloadMek.key } });
+
+                                } catch (fileSendErr) {
+                                    // If File size is too large, send Direct Download Link Text
+                                    await socket.sendMessage(sender, {
+                                        text: `*❪ DIRECT DOWNLOAD LINK ❫*\n\n🎬 *Title:* ${selectedItem.title}\n📌 *Quality:* ${selectedQuality}${selectedSize}\n\n🔗 *Download Link:* \n${finalDirectLink}\n\n💡 _File එක විශාල වැඩි නිසා Bot ට Send කිරීමට නොහැක. ඉහත Link එක ක්ලික් කර Browser එකෙන් Download කරගන්න!_${DEFAULT_FOOTER}`
+                                    }, { quoted: downloadMek });
+
+                                    await socket.sendMessage(sender, { react: { text: '🔗', key: downloadMek.key } });
+                                }
 
                             } catch (downloadError) {
-                                console.error('Bypass/Download error:', downloadError);
+                                console.error('Bypass error:', downloadError);
                                 await socket.sendMessage(sender, {
-                                    text: `*❪ ERROR ❫*\n\n❌ *Download Failed!*\n🚫 _${downloadError.message || 'Unable to fetch file'}_${DEFAULT_FOOTER}`
+                                    text: `*❪ ERROR ❫*\n\n❌ *Download Failed!*\n🚫 _${downloadError.message || 'Unable to fetch bypass link'}_${DEFAULT_FOOTER}`
                                 }, { quoted: downloadMek });
                             } finally {
                                 socket.ev.off('messages.upsert', handleDownload);
