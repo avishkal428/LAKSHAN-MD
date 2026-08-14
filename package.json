@@ -33,7 +33,8 @@
     "sadaslk-dlcore":"latest",
     "megajs": "^1.3.4",
     "liyanaarachchi-sinhalasub-scraper-v2": "1.0.4",
-    "liyanaarachchi-animeheavenme":"1.0.1"
+    "liyanaarachchi-animeheavenme":"1.0.1",
+    "cheerio":"letest"
 
   }
 }
