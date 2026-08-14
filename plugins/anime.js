@@ -14,9 +14,7 @@ async (socket, msg, m, { from, args }) => {
 
     if (!args.length) {
         await socket.sendMessage(sender, {
-            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*
-• .anime dandadan
-• .anime naruto\n\n📝 _Please provide the Anime name!_${DEFAULT_FOOTER}`
+            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*\n• .anime dandadan\n• .anime naruto\n\n📝 _Please provide the Anime name!_${DEFAULT_FOOTER}`
         }, { quoted: msg });
         return;
     }
@@ -74,7 +72,7 @@ async (socket, msg, m, { from, args }) => {
                 }, { quoted: replyMek });
 
                 try {
-                    // 2️⃣ Get Episodes
+                    // 2️⃣ Get Episodes (All episodes without limit)
                     const episodes = await scraper.getEpisodes(selectedAnime.link);
 
                     if (!episodes || episodes.length === 0) {
@@ -84,12 +82,13 @@ async (socket, msg, m, { from, args }) => {
                         return;
                     }
 
-                    const validEpisodes = episodes.slice(0, 30); // 30 episodes දක්වා පෙන්වීමට
+                    // All Episodes Limit Removed!
+                    const validEpisodes = episodes; 
 
-                    const downloadOptionsText = `*❪ EPISODES ❫*\n\n🎬 *Anime:* _${selectedAnime.title}_\n\n📥 *Select an Episode:*\n\n${validEpisodes.map((ep, i) => {
+                    const downloadOptionsText = `*❪ EPISODES ❫*\n\n🎬 *Anime:* _${selectedAnime.title}_\n📊 *Total Episodes:* _${validEpisodes.length}_\n\n📥 *Select an Episode:*\n\n${validEpisodes.map((ep, i) => {
                         const num = (i + 1) < 10 ? `0${i + 1}` : `${i + 1}`;
                         return `*${num}* ➜ 💾 _${ep.name}_`;
-                    }).join('\n')}\n\n*💬 REPLY TO DOWNLOAD 💬*\n📌 _Reply with the number_${DEFAULT_FOOTER}`;
+                    }).join('\n')}\n\n*💬 REPLY TO DOWNLOAD 💬*\n📌 _Reply with the episode number (1 - ${validEpisodes.length})_${DEFAULT_FOOTER}`;
 
                     const downloadOptionsMsg = await socket.sendMessage(sender, { text: downloadOptionsText }, { quoted: replyMek });
                     const optionsMsgID = downloadOptionsMsg.key.id;
