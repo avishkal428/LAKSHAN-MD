@@ -1,21 +1,21 @@
 const { cmd } = require('../command');
-const thenkiri = require('liyanaarachchi-thenkiri-scrap');
+const scraper = require('liyanaarachchi-thenkiri-scrap');
 
 cmd({
     pattern: "thenkiri",
     alias: ["tk", "thenkiridl"],
-    desc: "Search and download movies or shows from Thenkiri",
+    desc: "Search and download movies from Thenkiri",
     category: "download",
     react: "🎥",
 },
 async (socket, msg, m, { from, args }) => {
     const sender = from;
-    const DEFAULT_FOOTER = `\n\n> 🧬 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴍᴏᴠɪᴇʜᴜʙ-ᴅʟ`;
+    const DEFAULT_FOOTER = `\n\n> 🧬 ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃`;
     const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500";
 
     if (!args.length) {
         await socket.sendMessage(sender, {
-            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*\n• .thenkiri avatar\n• .tk rrr\n\n📝 _Please provide the Movie name!_${DEFAULT_FOOTER}`
+            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*\n• .thenkiri deadpool\n• .tk rrr\n\n📝 _Please provide the Movie name!_${DEFAULT_FOOTER}`
         }, { quoted: msg });
         return;
     }
@@ -26,14 +26,8 @@ async (socket, msg, m, { from, args }) => {
     });
 
     try {
-        // 1️⃣ Find Search Function
-        const searchFn = thenkiri.search || thenkiri.searchMovie || thenkiri.getSearch || thenkiri;
-        
-        if (typeof searchFn !== 'function') {
-            throw new Error("Scraper search function not found!");
-        }
-
-        const searchResults = await searchFn(thenkiriQuery);
+        // 1️⃣ Search Movie
+        const searchResults = await scraper.searchMovie(thenkiriQuery);
 
         if (!searchResults || searchResults.length === 0) {
             await socket.sendMessage(sender, {
@@ -48,7 +42,7 @@ async (socket, msg, m, { from, args }) => {
         tkResults.forEach((item, index) => {
             const num = (index + 1) < 10 ? `0${index + 1}` : `${index + 1}`;
             const title = item.title || item.name || "Movie";
-            listText += `*${num}* ➜ 🎥 _${title.substring(0, 40)}_\n`;
+            listText += `*${num}* ➜ 🎥 _${title.substring(0, 50)}_\n`;
         });
 
         listText += `${DEFAULT_FOOTER}`;
@@ -76,56 +70,33 @@ async (socket, msg, m, { from, args }) => {
                 const selectedItem = tkResults[choice];
 
                 await socket.sendMessage(sender, { 
-                    text: `*❪ FETCHING ❫*\n\n🎬 *Fetching Movie Details...*\n⚡ _Please wait..._`
+                    text: `*❪ FETCHING ❫*\n\n🎬 *Fetching Download Options for ${selectedItem.title}...*\n⚡ _Please wait..._`
                 }, { quoted: replyMek });
 
                 try {
-                    // 2️⃣ Safe Get Details/Links Function Matching
-                    let getLinksFn = thenkiri.getLinks || thenkiri.getDl || thenkiri.download || thenkiri.info || thenkiri.getMovie;
+                    // 2️⃣ Get Download Options
+                    const options = await scraper.getDownloadOptions(selectedItem.link);
 
-                    if (typeof getLinksFn !== 'function') {
-                        // Fallback: search for any function inside package if not matched above
-                        const availableFns = Object.keys(thenkiri).filter(k => typeof thenkiri[k] === 'function');
-                        if (availableFns.length > 1) {
-                            const dlFnName = availableFns.find(fn => fn !== 'search' && fn !== 'searchMovie');
-                            if (dlFnName) getLinksFn = thenkiri[dlFnName];
-                        }
-                    }
-
-                    if (typeof getLinksFn !== 'function') {
-                        throw new Error("Download links function not found in scraper package!");
-                    }
-
-                    const itemLink = selectedItem.link || selectedItem.url;
-                    const movieData = await getLinksFn(itemLink);
-                    
-                    // Handle array or object return format
-                    const validDownloads = movieData?.links || movieData?.download || (Array.isArray(movieData) ? movieData : []);
-
-                    if (!validDownloads || validDownloads.length === 0) {
+                    if (!options || options.length === 0) {
                         await socket.sendMessage(sender, {
-                            text: `*❪ NO DOWNLOADS ❫*\n\n⚠️ *No Downloads Found!*\n😞 _There are no downloads available for this movie!_${DEFAULT_FOOTER}`
+                            text: `*❪ NO DOWNLOADS ❫*\n\n⚠️ *No Download Links Found!*\n😞 _There are no direct links available for this movie!_${DEFAULT_FOOTER}`
                         }, { quoted: replyMek });
                         return;
                     }
 
-                    // Movie Details Text
-                    const itemTitle = selectedItem.title || selectedItem.name || "Movie";
-                    const movieDetailsText = `*❪ MOVIE DETAILS ❫*\n\n🎬 *Title:* ${itemTitle}\n🗿 *Source:* thenkiri.com${DEFAULT_FOOTER}`;
+                    // Movie Details & Poster Photo
                     const moviePosterUrl = selectedItem.img || selectedItem.image || selectedItem.poster || DEFAULT_IMAGE;
+                    const movieDetailsText = `*❪ MOVIE DETAILS ❫*\n\n🎬 *Title:* ${selectedItem.title}\n🗿 *Source:* thenkiri.com${DEFAULT_FOOTER}`;
 
-                    // Send Poster Image
                     await socket.sendMessage(sender, {
                         image: { url: moviePosterUrl },
                         caption: movieDetailsText
                     }, { quoted: replyMek });
 
-                    // Download Options Text
-                    const downloadOptionsText = `*❪ DOWNLOADS ❫*\n\n📥 *Select Quality / Option:*\n\n${validDownloads.map((dl, i) => {
+                    // Download Options Menu
+                    const downloadOptionsText = `*❪ DOWNLOADS ❫*\n\n📥 *Select Quality / Option:*\n\n${options.map((opt, i) => {
                         const num = (i + 1) < 10 ? `0${i + 1}` : `${i + 1}`;
-                        const label = dl.quality || dl.title || dl.label || "Direct Link";
-                        const size = dl.size ? `💾 _${dl.size}_` : '';
-                        return `*${num}* ➜ 🎥 _${label}_ ${size}`;
+                        return `*${num}* ➜ 🎥 _${opt.name || 'Download Option'}_`;
                     }).join('\n')}\n\n*💬 REPLY TO DOWNLOAD 💬*\n📌 _Reply with the number_${DEFAULT_FOOTER}`;
 
                     const downloadOptionsMsg = await socket.sendMessage(sender, { text: downloadOptionsText }, { quoted: replyMek });
@@ -142,32 +113,40 @@ async (socket, msg, m, { from, args }) => {
                         if (isReplyToOptionsMsg && sender === downloadMek.key.remoteJid) {
                             const choiceNum = parseInt(downloadChoice) - 1;
                             
-                            if (isNaN(choiceNum) || choiceNum < 0 || choiceNum >= validDownloads.length) {
+                            if (isNaN(choiceNum) || choiceNum < 0 || choiceNum >= options.length) {
                                 await socket.sendMessage(sender, {
-                                    text: `*❪ INVALID ❫*\n\n⚠️ *Wrong Number!*\n🎯 *Range:* _01 - ${validDownloads.length}_\n📝 _Please reply with a valid number!_${DEFAULT_FOOTER}`
+                                    text: `*❪ INVALID ❫*\n\n⚠️ *Wrong Number!*\n🎯 *Range:* _01 - ${options.length}_\n📝 _Please reply with a valid number!_${DEFAULT_FOOTER}`
                                 }, { quoted: downloadMek });
                                 return;
                             }
 
-                            const selectedDownload = validDownloads[choiceNum];
-                            await socket.sendMessage(sender, { react: { text: '📥', key: downloadMek.key } });
+                            const selectedOption = options[choiceNum];
+                            await socket.sendMessage(sender, { react: { text: '⏳', key: downloadMek.key } });
 
                             try {
-                                const finalDirectLink = selectedDownload.link || selectedDownload.url;
-                                const qualityLabel = selectedDownload.quality || selectedDownload.title || 'HD';
-                                const safeFileName = `${itemTitle.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
+                                // 3️⃣ Get Direct Video Link (Auto Bypass)
+                                const finalDirectLink = await scraper.bypassDownloadwella(selectedOption.link);
 
+                                if (!finalDirectLink) {
+                                    throw new Error("Direct video link generation failed.");
+                                }
+
+                                await socket.sendMessage(sender, { react: { text: '📥', key: downloadMek.key } });
+
+                                const safeFileName = `${selectedItem.title.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
+
+                                // Send Video Document
                                 await socket.sendMessage(sender, {
                                     document: { url: finalDirectLink },
                                     mimetype: 'video/mp4',
                                     fileName: safeFileName,
-                                    caption: `*❪ MOVIE ❫*\n\n🎭 *${itemTitle}*\n📌 *Quality:* _${qualityLabel}_${DEFAULT_FOOTER}`
+                                    caption: `*❪ THENKIRI ❫*\n\n🎭 *${selectedItem.title}*\n📌 *Quality:* _${selectedOption.name || 'HD'}_${DEFAULT_FOOTER}`
                                 }, { quoted: downloadMek });
 
                                 await socket.sendMessage(sender, { react: { text: '✅', key: downloadMek.key } });
 
                             } catch (downloadError) {
-                                console.error('Download error:', downloadError);
+                                console.error('Bypass/Download error:', downloadError);
                                 await socket.sendMessage(sender, {
                                     text: `*❪ ERROR ❫*\n\n❌ *Download Failed!*\n🚫 _${downloadError.message || 'Unable to fetch file'}_${DEFAULT_FOOTER}`
                                 }, { quoted: downloadMek });
@@ -181,7 +160,7 @@ async (socket, msg, m, { from, args }) => {
                     socket.ev.on('messages.upsert', handleDownload);
 
                 } catch (detailsError) {
-                    console.error('Details error:', detailsError);
+                    console.error('Options error:', detailsError);
                     await socket.sendMessage(sender, {
                         text: `*❪ ERROR ❫*\n\n❌ *Movie Details Error!*\n🚫 _${detailsError.message}_${DEFAULT_FOOTER}`
                     }, { quoted: replyMek });
