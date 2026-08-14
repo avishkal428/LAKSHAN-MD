@@ -10,7 +10,7 @@ cmd({
 },
 async (socket, msg, m, { from, args }) => {
     const sender = from;
-    const DEFAULT_FOOTER = `\n\n> 🧬 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴍᴏᴠɪᴇʜᴜʙ-ᴅʟ`;
+    const DEFAULT_FOOTER = `\n\n> 🧬 ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃`;
 
     if (!args.length) {
         await socket.sendMessage(sender, {
