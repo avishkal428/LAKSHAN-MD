@@ -19,41 +19,40 @@ cmd({
         const reactKey = m?.key || mek.key;
         await conn.sendMessage(from, { react: { text: '⏳', key: reactKey } });
 
+        // Extract File ID from Google Drive URL
+        const idMatch = gLink.match(/\/d\/([a-zA-Z0-9_-]+)/) || gLink.match(/id=([a-zA-Z0-9_-]+)/);
+        const fileId = idMatch ? idMatch[1] : null;
+
         let downloadData = null;
 
-        // Source 1: Dark-Yasiya GDrive API (100% Free & Fast)
-        try {
-            const res = await axios.get(`https://www.dark-yasiya-api.site/download/gdrive?url=${encodeURIComponent(gLink)}`, { timeout: 15000 });
-            if (res.data?.status && res.data?.result) {
-                const r = res.data.result;
-                downloadData = {
-                    downloadUrl: r.dl_url || r.downloadUrl,
-                    fileName: r.fileName || r.name || "GDrive_File",
-                    fileSize: r.fileSize || r.size || "Unknown",
-                    mimetype: r.mimetype || r.mimeType || "application/octet-stream"
-                };
-            }
-        } catch (e) { /* fallback */ }
+        // Method 1: Direct Google Drive Download (Using File ID)
+        if (fileId) {
+            downloadData = {
+                downloadUrl: `https://drive.google.com/uc?export=download&id=${fileId}`,
+                fileName: `GDrive_File_${fileId.substring(0, 5)}.zip`,
+                fileSize: "Public File",
+                mimetype: "application/octet-stream"
+            };
+        }
 
-        // Source 2: BK9 GDrive API (Backup)
+        // Method 2: Fallback Scraper API (In case File ID extraction fails)
         if (!downloadData) {
             try {
-                const res = await axios.get(`https://bk9.fun/download/gdrive?url=${encodeURIComponent(gLink)}`, { timeout: 15000 });
-                if (res.data?.status && res.data?.BK9) {
-                    const r = res.data.BK9;
+                const res = await axios.get(`https://api.guruapi.tech/gdrive?url=${encodeURIComponent(gLink)}`, { timeout: 15000 });
+                if (res.data?.downloadUrl) {
                     downloadData = {
-                        downloadUrl: r.dl_url,
-                        fileName: r.fileName || "GDrive_File",
-                        fileSize: r.fileSize || "Unknown",
-                        mimetype: r.mimetype || "application/octet-stream"
+                        downloadUrl: res.data.downloadUrl,
+                        fileName: res.data.fileName || "GDrive_File",
+                        fileSize: res.data.fileSize || "Unknown",
+                        mimetype: res.data.mimetype || "application/octet-stream"
                     };
                 }
-            } catch (e) { /* both failed */ }
+            } catch (e) { /* fallback */ }
         }
 
         if (!downloadData || !downloadData.downloadUrl) {
             await conn.sendMessage(from, { react: { text: '❌', key: reactKey } });
-            return reply('❌ *ᴜɴᴀʙʟᴇ ᴛᴏ ꜰᴇᴛᴄʜ ꜰɪʟᴇ. ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʟɪɴᴋ ɪs ᴘᴜʙʟɪᴄ!*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
+            return reply('❌ *ᴜɴᴀʙʟᴇ ᴛᴏ ꜰᴇᴛᴄʜ ꜰɪʟᴇ. ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʟɪɴᴋ ɪs ᴘᴜʙʟɪᴄ! (Anyone with the link can view)*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
         }
 
         const { downloadUrl, fileName, fileSize, mimetype } = downloadData;
@@ -65,7 +64,6 @@ cmd({
 ┌───────────────────┐
   📂 *ꜰɪʟᴇ:* ${fileName}
   📏 *sɪᴢᴇ:* ${fileSize}
-  📡 *ᴛʏᴘᴇ:* ${mimetype}
 └───────────────────┘
 > *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
@@ -75,20 +73,14 @@ cmd({
             isForwarded: false
         };
 
-        // Automatic Media Router
-        if (mimetype.startsWith('image')) {
-            await conn.sendMessage(from, { image: { url: downloadUrl }, caption: infoMsg, contextInfo: context }, { quoted: mek });
-        } else if (mimetype.startsWith('video')) {
-            await conn.sendMessage(from, { video: { url: downloadUrl }, caption: infoMsg, contextInfo: context }, { quoted: mek });
-        } else {
-            await conn.sendMessage(from, { 
-                document: { url: downloadUrl }, 
-                mimetype, 
-                fileName, 
-                caption: infoMsg, 
-                contextInfo: context 
-            }, { quoted: mek });
-        }
+        // Send Document
+        await conn.sendMessage(from, { 
+            document: { url: downloadUrl }, 
+            mimetype: mimetype, 
+            fileName: fileName, 
+            caption: infoMsg, 
+            contextInfo: context 
+        }, { quoted: mek });
 
         await conn.sendMessage(from, { react: { text: '✅', key: reactKey } });
 
@@ -97,4 +89,3 @@ cmd({
         reply('❌ *ᴅᴏᴡɴʟᴏᴀᴅ ᴘʀᴏᴛᴏᴄᴏʟ ꜰᴀɪʟᴇᴅ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
     }
 });
-
