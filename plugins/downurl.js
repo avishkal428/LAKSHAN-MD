@@ -43,7 +43,7 @@ async (conn, mek, m, { from, q, reply, sender }) => {
 
         // --- CYBER GRID INFO ---
         const infoMsg = `
-*「 ᴀᴋɪɴᴅᴜ-ᴍᴅ : ᴜʀʟ ꜰᴇᴛᴄʜᴇʀ 」*
+*「 𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃 : ᴜʀʟ ꜰᴇᴛᴄʜᴇʀ 」*
 
 ┌───────────────────┐
   📂 *ꜰᴏʀᴍᴀᴛ:* ${fileExt}
