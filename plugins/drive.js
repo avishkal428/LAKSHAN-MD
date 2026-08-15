@@ -1,11 +1,17 @@
 const { cmd } = require('../command');
 const axios = require('axios');
 
+// GDrive File ID එක වෙන් කරගන්නා Function එක
+function getGDriveId(url) {
+    const match = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+}
+
 cmd({
     pattern: "gdrive",
     alias: ["gd", "drive"],
     react: "📥",
-    desc: "Download GDrive Files",
+    desc: "Download Google Drive Files",
     category: "download",
     filename: __filename
 },
@@ -13,24 +19,19 @@ async(conn, mek, m, {from, args, reply}) => {
     try {
         if (!args[0]) return reply("❌ කරුණාකර Google Drive Link එකක් ලබාදෙන්න.");
 
-        reply("⏳ Link එක Processing වෙමින් පවතී...");
+        const fileId = getGDriveId(args[0]);
+        if (!fileId) return reply("❌ වලංගු Google Drive Link එකක් නොවේ.");
 
-        // GDrive Direct Download Link එක ලබාගැනීමට Free API එකක් භාවිත කිරීම
-        const apiUrl = `https://api.fgmods.xyz/api/downloader/gdrive?url=${encodeURIComponent(args[0])}&apikey=fg-api`;
-        const res = await axios.get(apiUrl);
+        reply("⏳ File එක Download වෙමින් පවතී, මදක් රැඳී සිටින්න...");
 
-        if (!res.data || !res.data.result || !res.data.result.downloadUrl) {
-            return reply("❌ File එක සොයාගැනීමට නොහැකි විය. Permission 'Anyone with link' ලබාදී ඇත්දැයි බලන්න.");
-        }
+        // Direct Download Link
+        const downloadUrl = `https://drive.google.com/uc?id=${fileId}&export=download`;
 
-        const fileData = res.data.result;
-        reply(`📦 *File Name:* ${fileData.fileName}\n⚖️ *Size:* ${fileData.fileSize}\n\n⏳ Upload වෙමින් පවතී...`);
-
-        // Direct Download Link එක හරහා Document එක Send කිරීම
+        // WhatsApp එකට Direct File Stream එකක් ලෙස Send කිරීම
         await conn.sendMessage(from, { 
-            document: { url: fileData.downloadUrl }, 
-            mimetype: fileData.mimetype || 'application/octet-stream', 
-            fileName: fileData.fileName || 'GDrive_File.zip' 
+            document: { url: downloadUrl }, 
+            mimetype: 'application/octet-stream', 
+            fileName: `GDrive_File_${fileId.substring(0, 5)}.zip` 
         }, { quoted: mek });
 
     } catch (e) {
