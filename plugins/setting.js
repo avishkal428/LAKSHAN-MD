@@ -64,7 +64,7 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
 
 📝 *ɴᴏᴛᴇ:* ᴜsᴇ \`${config.PREFIX || '.'}update <ᴠᴀʀ>:<ᴠᴀʟᴜᴇ>\` ᴛᴏ ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴgs.
 
-> *ᴀᴋɪɴᴅᴜ-ᴍᴅ*`;
+> *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
         await conn.sendMessage(from, {
             image: { url: menuImg },
@@ -74,11 +74,11 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
                 forwardingScore: 0,
                 isForwarded: false,
                 externalAdReply: {
-                    title: "ᴀᴋɪɴᴅᴜ-ᴍᴅ sʏsᴛᴇᴍ ᴄᴏɴᴛʀᴏʟ",
+                    title: "𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃 sʏsᴛᴇᴍ ᴄᴏɴᴛʀᴏʟ",
                     body: "ᴏꜰꜰɪᴄɪᴀʟ ᴄᴏɴꜰɪɢᴜʀᴀᴛɪᴏɴ ᴘᴀɴᴇʟ",
                     mediaType: 1,
                     thumbnailUrl: menuImg,
-                    sourceUrl: "https://github.com/Akindu/AKINDU-MD",
+                    sourceUrl: "https://github.com/avishkal428/LAKSHAN-MD",
                     renderLargerThumbnail: false
                 }
             }
