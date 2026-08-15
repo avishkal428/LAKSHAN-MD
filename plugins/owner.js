@@ -53,7 +53,7 @@ async (conn, mek, m, { from, sender, reply }) => {
 
         // 2. Send Image with Context Details
         await conn.sendMessage(from, {
-            image: { url: 'https://files.catbox.moe/brlkte.jpg' }, 
+            image: { url: 'https://files.catbox.moe/lkvdvv.jpg' }, 
             caption: ownerPanel,
             contextInfo: {
                 mentionedJid: [sender, `${cleanNumber}@s.whatsapp.net`], 
@@ -63,7 +63,7 @@ async (conn, mek, m, { from, sender, reply }) => {
                     title: `ᴄᴏɴᴛᴀᴄᴛ: ${ownerName}`,
                     body: "𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃 ᴏꜰꜰɪᴄɪᴀʟ ᴅᴇᴠᴇʟᴏᴘᴇʀ",
                     mediaType: 1,
-                    thumbnailUrl: 'https://files.catbox.moe/brlkte.jpg',
+                    thumbnailUrl: 'https://files.catbox.moe/lkvdvv.jpg',
                     sourceUrl: `https://wa.me/${cleanNumber}`,
                     renderLargerThumbnail: false
                 }
