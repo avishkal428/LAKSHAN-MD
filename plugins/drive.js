@@ -1,80 +1,81 @@
-const axios = require("axios");
-const { cmd } = require("../command");
+const axios = require('axios');
 
+// File ID එක වෙන් කරගන්නා Function එක
+function extractFileId(url) {
+    const match = url.match(/(?:d\/|id=)([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+}
+
+// Google Drive Direct Buffer/Stream Downloader
+async function downloadGDriveFile(fileId) {
+    try {
+        // Direct Download endpoint එක
+        const url = `https://drive.google.com/uc?id=${fileId}&export=download`;
+        
+        // Initial Request
+        let res = await axios.get(url, {
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            }
+        });
+
+        // ලොකු ෆයිල් වල confirmation cookie සෙවීම
+        const cookie = res.headers['set-cookie'];
+        const htmlContent = res.data.toString('utf-8');
+
+        if (htmlContent.includes('confirm=')) {
+            const confirmToken = htmlContent.match(/confirm=([a-zA-Z0-9_-]+)/)?.[1];
+            if (confirmToken) {
+                res = await axios.get(`${url}&confirm=${confirmToken}`, {
+                    responseType: 'arraybuffer',
+                    headers: {
+                        'Cookie': cookie,
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                    }
+                });
+            }
+        }
+
+        return res.data; // File Buffer එක
+    } catch (error) {
+        console.error("Download Error:", error.message);
+        return null;
+    }
+}
+
+// Command Handler
 cmd({
     pattern: "gdrive",
     alias: ["gd"],
-    react: '📥',
-    desc: "Download files from Google Drive.",
+    react: "📥",
+    desc: "Download GDrive Files",
     category: "download",
-    use: ".gdrive <url>",
     filename: __filename
-}, async (conn, mek, m, { from, reply, args, q, sender }) => {
+},
+async(conn, mek, m, {from, args, reply}) => {
     try {
-        const gLink = q || args[0];
-        if (!gLink || !gLink.includes("drive.google.com")) {
-            return reply('⚠️ *ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀ ᴠᴀʟɪᴅ ɢᴏᴏɢʟᴇ ᴅʀɪᴠᴇ ᴜʀʟ.*\n\n*ᴀᴋɪɴᴅᴜ-ᴍᴅ*');
+        if (!args[0]) return reply("❌ කරුණාකර Google Drive Link එකක් ලබාදෙන්න.");
+
+        const fileId = extractFileId(args[0]);
+        if (!fileId) return reply("❌ වලංගු Google Drive Link එකක් නොවේ.");
+
+        reply("⏳ File එක Download වෙමින් පවතී...");
+
+        const fileBuffer = await downloadGDriveFile(fileId);
+        
+        if (!fileBuffer) {
+            return reply("❌ File එක Download කර ගැනීමට නොහැකි විය. Permission (Anyone with link) ලබාදී ඇත්දැයි බලන්න.");
         }
 
-        await conn.sendMessage(from, { react: { text: '⏳', key: m.key } });
+        // WhatsApp එකට Send කිරීම
+        await conn.sendMessage(from, { 
+            document: fileBuffer, 
+            mimetype: 'application/zip', 
+            fileName: `GDrive_File_${fileId.substring(0, 5)}.zip` 
+        }, { quoted: mek });
 
-        // Protocol 1: Attempt NexOracle API
-        let downloadData = null;
-        try {
-            const res = await axios.get(`https://api.nexoracle.com/downloader/gdrive`, {
-                params: { apikey: 'free_key@maher_apis', url: gLink }
-            });
-            if (res.data?.status === 200) downloadData = res.data.result;
-        } catch (e) { /* fallback to next source */ }
-
-        // Protocol 2: Fallback to Visper API
-        if (!downloadData) {
-            try {
-                const res = await axios.get(`https://visper-md-ap-is.vercel.app/download/gdrive?q=${encodeURIComponent(gLink)}`);
-                if (res.data.success) downloadData = res.data.result;
-            } catch (e) { /* both failed */ }
-        }
-
-        if (!downloadData) return reply('❌ *ᴜɴᴀʙʟᴇ ᴛᴏ ꜰᴇᴛᴄʜ ꜰɪʟᴇ. ᴘʟᴇᴀsᴇ ᴄʜᴇᴄᴋ ᴘᴇʀᴍɪssɪᴏɴs.*\n\n*ᴀᴋɪɴᴅᴜ-ᴍᴅ*');
-
-        const { downloadUrl, fileName, fileSize, mimetype } = downloadData;
-
-        // --- CYBER GRID PANEL ---
-        const infoMsg = `
-*「 ᴀᴋɪɴᴅᴜ-ᴍᴅ : ɢ-ᴅʀɪᴠᴇ ᴄᴏʀᴇ 」*
-
-┌───────────────────┐
-  📂 *ꜰɪʟᴇ:* ${fileName}
-  📏 *sɪᴢᴇ:* ${fileSize || "N/A"}
-  📡 *ᴛʏᴘᴇ:* ${mimetype}
-└───────────────────┘
-> *ᴀᴋɪɴᴅᴜ-ᴍᴅ*`;
-
-        const context = {
-            mentionedJid: [sender],
-            forwardingScore: 0,
-            isForwarded: false
-        };
-
-        // Automatic Media Router
-        if (mimetype.startsWith('image')) {
-            await conn.sendMessage(from, { image: { url: downloadUrl }, caption: infoMsg, contextInfo: context }, { quoted: mek });
-        } else if (mimetype.startsWith('video')) {
-            await conn.sendMessage(from, { video: { url: downloadUrl }, caption: infoMsg, contextInfo: context }, { quoted: mek });
-        } else {
-            await conn.sendMessage(from, { 
-                document: { url: downloadUrl }, 
-                mimetype, 
-                fileName, 
-                caption: infoMsg, 
-                contextInfo: context 
-            }, { quoted: mek });
-        }
-
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
-
-    } catch (error) {
-        console.error(error);
-        reply('❌ *ᴅᴏᴡɴʟᴏᴀᴅ ᴘʀᴏᴛᴏᴄᴏʟ ꜰᴀɪʟᴇᴅ.*\n\n*ᴀᴋɪɴᴅᴜ-ᴍᴅ*');
+    } catch (e) {
+        reply(`❌ Error: ${e.message}`);
     }
 });
