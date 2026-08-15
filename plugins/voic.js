@@ -1,3 +1,4 @@
+const { cmd } = require('../command');
 const googleTTS = require("google-tts-api");
 // ඔබේ බෝට් එකේ Main index/lib එක නිවැරදිව load කරගැනීම:
 const { Module_Exports, prefix } = require("../lib/index.js") || require("../lib");
