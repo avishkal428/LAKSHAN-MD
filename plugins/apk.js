@@ -11,13 +11,13 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { from, reply, args, sender }) => {
   try {
-    let q = args.join(" ");
+    let q = args.join(" ").trim();
     if (!q) return reply('⚠️ *ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀɴ ᴀᴘᴘ ɴᴀᴍᴇ ᴏʀ ʟɪɴᴋ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
 
     const reactKey = m?.key || mek.key;
     await conn.sendMessage(from, { react: { text: '⏳', key: reactKey } });
 
-    // Direct APK Link
+    // 1. Direct File Link එකක් ආවොත් (e.g. https://site.com/file.apk)
     if (q.startsWith("http") && !q.includes("play.google.com")) {
       const fileName = q.split('/').pop().split('?')[0] || "application.apk";
       
@@ -32,7 +32,7 @@ cmd({
       return await conn.sendMessage(from, { react: { text: '✅', key: reactKey } });
     }
 
-    // Play Store URL Extractions
+    // 2. Play Store Link එකක් ආවොත් Package ID එක වෙන් කර ගැනීම
     if (q.includes("play.google.com")) {
       const match = q.match(/id=([a-zA-Z0-9._]+)/);
       if (match && match[1]) {
@@ -42,31 +42,31 @@ cmd({
 
     let appData = null;
 
-    // API Source 1: Bk9 Free API
+    // Source 1: Dark-Yasiya Direct Scraper (100% Free & Stable)
     try {
-      const res = await axios.get(`https://bk9.fun/download/apk?q=${encodeURIComponent(q)}`, { timeout: 15000 });
-      if (res.data?.status && res.data?.BK9) {
-        const r = res.data.BK9;
+      const res = await axios.get(`https://www.dark-yasiya-api.site/download/apk?q=${encodeURIComponent(q)}`, { timeout: 15000 });
+      if (res.data?.status && res.data?.result) {
+        const r = res.data.result;
         appData = {
           name: r.name || q,
           size: r.size || "Unknown",
-          upd: r.lastup || "N/A",
+          upd: r.lastUpdate || r.lastup || "N/A",
           icon: r.icon || "https://i.imgur.com/2wz94kY.png",
-          dl: r.dllink
+          dl: r.dllink || r.download
         };
       }
     } catch (e) { /* fallback */ }
 
-    // API Source 2: David Cyril API (Backup)
+    // Source 2: BK9 API (Backup Source)
     if (!appData) {
       try {
-        const res = await axios.get(`https://api.davidcyriltech.my.id/download/apk?text=${encodeURIComponent(q)}`, { timeout: 15000 });
-        if (res.data?.success && res.data?.result) {
-          const r = res.data.result;
+        const res = await axios.get(`https://bk9.fun/download/apk?q=${encodeURIComponent(q)}`, { timeout: 15000 });
+        if (res.data?.status && res.data?.BK9) {
+          const r = res.data.BK9;
           appData = {
-            name: r.name,
+            name: r.name || q,
             size: r.size || "Unknown",
-            upd: r.lastUpdate || "N/A",
+            upd: r.lastup || "N/A",
             icon: r.icon || "https://i.imgur.com/2wz94kY.png",
             dl: r.dllink
           };
@@ -74,10 +74,10 @@ cmd({
       } catch (e) { /* fallback */ }
     }
 
-    // API Source 3: Aptoide Direct Web API
+    // Source 3: Aptoide Public API Search
     if (!appData) {
       try {
-        const res = await axios.get(`https://ws75.aptoide.com/api/7/apps/search/query=${encodeURIComponent(q)}/limit=1`, { timeout: 15000 });
+        const res = await axios.get(`https://ws75.aptoide.com/api/7/apps/search?query=${encodeURIComponent(q)}&limit=1`, { timeout: 15000 });
         if (res.data?.datalist?.list?.length) {
           const r = res.data.datalist.list[0];
           appData = {
@@ -88,7 +88,7 @@ cmd({
             dl: r.file?.path_alt || r.file?.path
           };
         }
-      } catch (e) { /* failed */ }
+      } catch (e) { /* all failed */ }
     }
 
     if (!appData || !appData.dl) {
@@ -107,16 +107,18 @@ cmd({
 └───────────────────┘
 > *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
-    // Send Icon & Details Card
+    // Send Icon & Details Box
     await conn.sendMessage(from, {
       image: { url: appData.icon },
       caption: infoMsg,
       contextInfo: { mentionedJid: [sender], forwardingScore: 0, isForwarded: false }
     }, { quoted: mek });
 
-    // Send APK Direct File
+    // Stream Download
+    const stream = await axios.get(appData.dl, { responseType: 'stream' });
+
     await conn.sendMessage(from, {
-      document: { url: appData.dl },
+      document: { stream: stream.data },
       mimetype: 'application/vnd.android.package-archive',
       fileName: `${appData.name.replace(/[^a-zA-Z0-9]/g, "_")}.apk`,
       caption: `*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`,
