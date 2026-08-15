@@ -23,7 +23,7 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
         const isEnabled = (value) => value && value.toString().toLowerCase() === "true";
-        const menuImg = config.MENU_IMAGE_URL || config.MENU_IMG || 'https://files.catbox.moe/lkvdvv.jpg';
+        const menuImg = config.MENU_IMAGE_URL || config.MENU_IMG || 'https://files.catbox.moe/uqofdi.jpg';
 
         let settingsPanel = `
 *「 ʟᴀᴋsʜᴀɴ-ᴍᴅ : sʏsᴛᴇᴍ sᴇᴛᴛɪɴɢs 」*
