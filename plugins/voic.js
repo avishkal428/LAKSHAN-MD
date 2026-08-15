@@ -1,20 +1,6 @@
 const googleTTS = require("google-tts-api");
-
-// Path Error එක වැළැක්වීම සඳහා Safe Import එකක්
-let Module_Exports, prefix;
-try {
-  const lib = require("../lib");
-  Module_Exports = lib.Module_Exports;
-  prefix = lib.prefix || ".";
-} catch (e) {
-  try {
-    const libIndex = require("../lib/index");
-    Module_Exports = libIndex.Module_Exports;
-    prefix = libIndex.prefix || ".";
-  } catch (err) {
-    console.error("Lib folder search error:", err);
-  }
-}
+// ඔබේ බෝට් එකේ Main index/lib එක නිවැරදිව load කරගැනීම:
+const { Module_Exports, prefix } = require("../lib/index.js") || require("../lib");
 
 Module_Exports(
   {
