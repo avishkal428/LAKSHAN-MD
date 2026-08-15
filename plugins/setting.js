@@ -11,23 +11,28 @@ cmd({
 }, 
 async (conn, mek, m, { from, reply, isCreator, sender }) => {
     try {
-        if (!isCreator) {
+        // Direct Owner Number Check (sender අංකය පරීක්ෂා කිරීම)
+        const ownerNumbers = ['94725337806', config.OWNER_NUMBER, config.OWNER_NUM];
+        const senderNumber = sender.split('@')[0];
+        const isOwner = isCreator || ownerNumbers.includes(senderNumber);
+
+        if (!isOwner) {
             return reply("🚫 *ᴏᴡɴᴇʀ ᴏɴʟʏ ᴄᴏᴍᴍᴀɴᴅ!*");
         }
 
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
         const isEnabled = (value) => value && value.toString().toLowerCase() === "true";
-        const menuImg = config.MENU_IMAGE_URL || 'https://files.catbox.moe/lkvdvv.jpg';
+        const menuImg = config.MENU_IMAGE_URL || config.MENU_IMG || 'https://files.catbox.moe/lkvdvv.jpg';
 
         let settingsPanel = `
-*「 ᴀᴋɪɴᴅᴜ-ᴍᴅ : sʏsᴛᴇᴍ sᴇᴛᴛɪɴgs 」*
+*「 ʟᴀᴋsʜᴀɴ-ᴍᴅ : sʏsᴛᴇᴍ sᴇᴛᴛɪɴɢs 」*
 
 ┌───────────────────┐
   🤖 *ʙᴏᴛ ɪɴꜰᴏ*
   • ɴᴀᴍᴇ: ${config.BOT_NAME || '𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃'}
   • ᴘʀᴇꜰɪx: [ ${config.PREFIX || '.'} ]
-  • ᴏᴡɴᴇʀ: ${config.OWNER_NAME || 'Owner'}
+  • ᴏᴡɴᴇʀ: ${config.OWNER_NAME || 'Lakshan'}
   • ᴍᴏᴅᴇ: ${(config.MODE || 'public').toUpperCase()}
 └───────────────────┘
 
@@ -62,7 +67,7 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
   • ᴀɴᴛɪ-ᴅᴇʟᴇᴛᴇ: ${isEnabled(config.ANTI_DELETE) ? "✅" : "❌"}
 └───────────────────┘
 
-📝 *ɴᴏᴛᴇ:* ᴜsᴇ \`${config.PREFIX || '.'}update <ᴠᴀʀ>:<ᴠᴀʟᴜᴇ>\` ᴛᴏ ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴgs.
+📝 *ɴᴏᴛᴇ:* ᴜsᴇ \`${config.PREFIX || '.'}update <ᴠᴀʀ>:<ᴠᴀʟᴜᴇ>\` ᴛᴏ ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴɢs.
 
 > *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
@@ -91,4 +96,3 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
         reply(`❌ *ᴇʀʀᴏʀ:* ${error.message}`);
     }
 });
-
