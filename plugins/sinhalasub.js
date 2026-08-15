@@ -1,4 +1,4 @@
-const { cmd } = require("../lib/command");
+const { cmd } = require("../command");
 const scraper = require("liyanaarachchi-sinhalasub-scraper-v2");
 const axios = require("axios");
 const cheerio = require("cheerio");
