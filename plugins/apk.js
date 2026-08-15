@@ -17,7 +17,7 @@ cmd({
     const reactKey = m?.key || mek.key;
     await conn.sendMessage(from, { react: { text: '⏳', key: reactKey } });
 
-    // 1. Direct File Link එකක් ආවොත් (e.g. https://site.com/file.apk)
+    // Direct APK Link
     if (q.startsWith("http") && !q.includes("play.google.com")) {
       const fileName = q.split('/').pop().split('?')[0] || "application.apk";
       
@@ -32,7 +32,7 @@ cmd({
       return await conn.sendMessage(from, { react: { text: '✅', key: reactKey } });
     }
 
-    // 2. Play Store Link එකක් ආවොත් Package Name (ID) එක වෙන් කර ගැනීම
+    // Play Store URL Extractions
     if (q.includes("play.google.com")) {
       const match = q.match(/id=([a-zA-Z0-9._]+)/);
       if (match && match[1]) {
@@ -41,16 +41,12 @@ cmd({
     }
 
     let appData = null;
-    let source = "ɴᴇxᴏʀᴀᴄʟᴇ";
 
-    // Source 1: NexOracle API
+    // API Source 1: Bk9 Free API
     try {
-      const res = await axios.get(`https://api.nexoracle.com/downloader/apk`, {
-        params: { apikey: 'free_key@maher_apis', q },
-        timeout: 15000
-      });
-      if (res.data?.status === 200 && res.data.result) {
-        const r = res.data.result;
+      const res = await axios.get(`https://bk9.fun/download/apk?q=${encodeURIComponent(q)}`, { timeout: 15000 });
+      if (res.data?.status && res.data?.BK9) {
+        const r = res.data.BK9;
         appData = {
           name: r.name || q,
           size: r.size || "Unknown",
@@ -61,16 +57,29 @@ cmd({
       }
     } catch (e) { /* fallback */ }
 
-    // Source 2: Aptoide API (App Name & Package ID Support)
+    // API Source 2: David Cyril API (Backup)
     if (!appData) {
       try {
-        const res = await axios.get(`https://ws75.aptoide.com/api/7/apps/search`, {
-          params: { query: q, limit: 1 },
-          timeout: 15000
-        });
+        const res = await axios.get(`https://api.davidcyriltech.my.id/download/apk?text=${encodeURIComponent(q)}`, { timeout: 15000 });
+        if (res.data?.success && res.data?.result) {
+          const r = res.data.result;
+          appData = {
+            name: r.name,
+            size: r.size || "Unknown",
+            upd: r.lastUpdate || "N/A",
+            icon: r.icon || "https://i.imgur.com/2wz94kY.png",
+            dl: r.dllink
+          };
+        }
+      } catch (e) { /* fallback */ }
+    }
+
+    // API Source 3: Aptoide Direct Web API
+    if (!appData) {
+      try {
+        const res = await axios.get(`https://ws75.aptoide.com/api/7/apps/search/query=${encodeURIComponent(q)}/limit=1`, { timeout: 15000 });
         if (res.data?.datalist?.list?.length) {
           const r = res.data.datalist.list[0];
-          source = "ᴀᴘᴛᴏɪᴅᴇ";
           appData = {
             name: r.name,
             size: r.size ? (r.size / 1048576).toFixed(2) + " MB" : "Unknown",
@@ -79,7 +88,7 @@ cmd({
             dl: r.file?.path_alt || r.file?.path
           };
         }
-      } catch (e) { /* both failed */ }
+      } catch (e) { /* failed */ }
     }
 
     if (!appData || !appData.dl) {
@@ -87,7 +96,7 @@ cmd({
       return reply('❌ *ᴀᴘᴘ ɴᴏᴛ ꜰᴏᴜɴᴅ ɪɴ ᴀɴʏ ᴅᴀᴛᴀʙᴀsᴇ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
     }
 
-    // Details Box
+    // Cyber-Grid UI
     const infoMsg = `
 *「 𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃 : ᴀᴘᴋ ᴄᴏʀᴇ 」*
 
@@ -95,22 +104,19 @@ cmd({
   📦 *ᴀᴘᴘ:* ${appData.name}
   📏 *sɪᴢᴇ:* ${appData.size}
   📅 *ᴜᴘᴅ:* ${appData.upd}
-  📡 *sʀᴄ:* ${source}
 └───────────────────┘
 > *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
-    // Send Image & Details
+    // Send Icon & Details Card
     await conn.sendMessage(from, {
       image: { url: appData.icon },
       caption: infoMsg,
       contextInfo: { mentionedJid: [sender], forwardingScore: 0, isForwarded: false }
     }, { quoted: mek });
 
-    // Stream Download for Large APKs
-    const stream = await axios.get(appData.dl, { responseType: 'stream' });
-
+    // Send APK Direct File
     await conn.sendMessage(from, {
-      document: { stream: stream.data },
+      document: { url: appData.dl },
       mimetype: 'application/vnd.android.package-archive',
       fileName: `${appData.name.replace(/[^a-zA-Z0-9]/g, "_")}.apk`,
       caption: `*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`,
