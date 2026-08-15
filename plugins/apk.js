@@ -11,12 +11,20 @@ cmd({
   filename: __filename
 }, async (conn, mek, m, { from, reply, args, sender }) => {
   try {
-    const q = args.join(" ");
+    let q = args.join(" ");
     if (!q) return reply('⚠️ *ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀɴ ᴀᴘᴘ ɴᴀᴍᴇ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
 
     // Safe Reaction key check
     const reactKey = m?.key || mek.key;
     await conn.sendMessage(from, { react: { text: '⏳', key: reactKey } });
+
+    // Extract App ID/Name if Play Store link is provided
+    if (q.includes("play.google.com")) {
+      const match = q.match(/id=([a-zA-Z0-9._]+)/);
+      if (match && match[1]) {
+        q = match[1]; // Use package name instead of full URL
+      }
+    }
 
     let appData = null;
     let source = "ɴᴇxᴏʀᴀᴄʟᴇ";
@@ -75,7 +83,7 @@ cmd({
   📅 *ᴜᴘᴅ:* ${appData.upd}
   📡 *sʀᴄ:* ${source}
 └───────────────────┘
-> *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃`;
+> *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
     // Send Icon & Details
     await conn.sendMessage(from, {
@@ -84,7 +92,17 @@ cmd({
       contextInfo: { mentionedJid: [sender], forwardingScore: 0, isForwarded: false }
     }, { quoted: mek });
 
-    // Send APK Document File
+    // Size handling for Heroku limit
+    const sizeNum = parseFloat(appData.size);
+    const isMB = appData.size.toUpperCase().includes("MB");
+    const isGB = appData.size.toUpperCase().includes("GB");
+
+    if (isGB || (isMB && sizeNum > 70)) {
+      await conn.sendMessage(from, { react: { text: '⚠️', key: reactKey } });
+      return reply(`⚠️ *ᴀᴘᴋ sɪᴢᴇ ɪs ᴛᴏᴏ ʟᴀʀɢᴇ (${appData.size})*\n\nDirect WhatsApp upload is limited to 70MB to prevent server timeout.\n\n🔗 *ᴅɪʀᴇᴄᴛ ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ:*\n${appData.dl}\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`);
+    }
+
+    // Send APK Document File (Under 70MB)
     await conn.sendMessage(from, {
       document: { url: appData.dl },
       mimetype: 'application/vnd.android.package-archive',
@@ -100,4 +118,3 @@ cmd({
     reply('❌ *ᴅᴏᴡɴʟᴏᴀᴅ ᴘʀᴏᴛᴏᴄᴏʟ ꜰᴀɪʟᴇᴅ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*');
   }
 });
-
