@@ -13,14 +13,14 @@ cmd({
 async (conn, mek, m, { from, q, reply, sender }) => {
     try {
         if (!q) {
-            return reply("⚠️ *ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀ ᴠᴀʟɪᴅ ᴅɪʀᴇᴄᴛ ʟɪɴᴋ.*\n\n*ᴀᴋɪɴᴅᴜ-ᴍᴅ*");
+            return reply("⚠️ *ᴘʟᴇᴀsᴇ ᴘʀᴏᴠɪᴅᴇ ᴀ ᴠᴀʟɪᴅ ᴅɪʀᴇᴄᴛ ʟɪɴᴋ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*");
         }
 
         const link = q.trim();
         const urlPattern = /^(https?:\/\/[^\s]+)/i;
         
         if (!urlPattern.test(link)) {
-            return reply("❌ *ɪɴᴠᴀʟɪᴅ ᴜʀʟ ꜰᴏʀᴍᴀᴛ.*\n\n*ᴀᴋɪɴᴅᴜ-ᴍᴅ*");
+            return reply("❌ *ɪɴᴠᴀʟɪᴅ ᴜʀʟ ꜰᴏʀᴍᴀᴛ.*\n\n*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*");
         }
 
         // Fetching metadata safely with fallback GET
@@ -50,7 +50,7 @@ async (conn, mek, m, { from, q, reply, sender }) => {
   📦 *sɪᴢᴇ:* ${sizeMB}
   🔗 *sᴛᴀᴛᴜs:* ᴅᴏᴡɴʟᴏᴀᴅɪɴɢ...
 └───────────────────┘
-> *ᴀᴋɪɴᴅᴜ-ᴍᴅ*`;
+> *𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`;
 
         await reply(infoMsg);
 
@@ -58,8 +58,8 @@ async (conn, mek, m, { from, q, reply, sender }) => {
         await conn.sendMessage(from, {
             document: { url: link },
             mimetype: contentType,
-            fileName: `AKINDU-MD_FILE.${fileExt.toLowerCase()}`,
-            caption: `*ᴀᴋɪɴᴅᴜ-ᴍᴅ*`,
+            fileName: `𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃_FILE.${fileExt.toLowerCase()}`,
+            caption: `*𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃*`,
             contextInfo: {
                 mentionedJid: [sender],
                 forwardingScore: 0,
