@@ -18,10 +18,10 @@ module.exports = {
     MODE: process.env.MODE || "public",
 
     // Images & Messages
-    ALIVE_IMG: process.env.ALIVE_IMG || "https://files.catbox.moe/lkvdvv.jpg",
+    ALIVE_IMG: process.env.ALIVE_IMG || "https://files.catbox.moe/uqofdi.jpg",
     ALIVE_MSG: process.env.ALIVE_MSG || "I'm Alive Now",
     MENU_IMG: process.env.MENU_IMG || "https://files.catbox.moe/lkvdvv.jpg",
-    MENU_IMAGE_URL: process.env.MENU_IMAGE_URL || "https://files.catbox.moe/lkvdvv.jpg",
+    MENU_IMAGE_URL: process.env.MENU_IMAGE_URL || "https://files.catbox.moe/uqofdi.jpg",
     MENU_MSG: process.env.MENU_MSG || "I'm MENU Now",
 
     // API Keys
