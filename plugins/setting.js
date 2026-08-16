@@ -11,7 +11,7 @@ cmd({
 }, 
 async (conn, mek, m, { from, reply, isCreator, sender }) => {
     try {
-        // Direct Owner Number Check (sender අංකය පරීක්ෂා කිරීම)
+        // Direct Owner Number Check
         const ownerNumbers = ['94725337806', config.OWNER_NUMBER, config.OWNER_NUM];
         const senderNumber = sender.split('@')[0];
         const isOwner = isCreator || ownerNumbers.includes(senderNumber);
@@ -23,7 +23,9 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
         await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
 
         const isEnabled = (value) => value && value.toString().toLowerCase() === "true";
-        const menuImg = config.MENU_IMAGE_URL || config.MENU_IMG || 'https://files.catbox.moe/uqofdi.jpg';
+        
+        // ඔයා දුන්න අලුත් Image Link එක මෙතනට දමා ඇත
+        const menuImg = 'https://files.catbox.moe/uqofdi.jpg';
 
         let settingsPanel = `
 *「 ʟᴀᴋsʜᴀɴ-ᴍᴅ : sʏsᴛᴇᴍ sᴇᴛᴛɪɴɢs 」*
@@ -33,16 +35,16 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
   • ɴᴀᴍᴇ: ${config.BOT_NAME || '𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃'}
   • ᴘʀᴇꜰɪx: [ ${config.PREFIX || '.'} ]
   • ᴏᴡɴᴇʀ: ${config.OWNER_NAME || 'Lakshan'}
-  • ᴍᴏᴅᴇ: ${(config.MODE || 'public').toUpperCase()}
+  • ᴍᴏ🇩ᴇ: ${(config.MODE || 'public').toUpperCase()}
 └───────────────────┘
 
 ┌───────────────────┐
   ⚙️ *ᴄᴏʀᴇ ᴄᴏɴꜰɪɢ*
-  • ᴘᴜʙʟɪᴄ ᴍᴏᴅᴇ: ${isEnabled(config.PUBLIC_MODE) ? "✅" : "❌"}
+  • ᴘᴜʙʟɪᴄ ᴍᴏ🇩ᴇ: ${isEnabled(config.PUBLIC_MODE) ? "✅" : "❌"}
   • ᴀʟᴡᴀʏs ᴏɴʟɪɴᴇ: ${isEnabled(config.ALWAYS_ONLINE) ? "✅" : "❌"}
-  • ʀᴇᴀᴅ ᴍsɢs: ${isEnabled(config.READ_MESSAGE) ? "✅" : "❌"}
+  • ʀᴇᴀ🇩 ᴍsɢs: ${isEnabled(config.READ_MESSAGE) ? "✅" : "❌"}
   • ᴀᴜᴛᴏ ᴛʏᴘɪɴɢ: ${isEnabled(config.AUTO_TYPING) ? "✅" : "❌"}
-  • ᴀᴜᴛᴏ ʀᴇᴄᴏʀᴅ: ${isEnabled(config.AUTO_RECORDING) ? "✅" : "❌"}
+  • ᴀᴜᴛᴏ ʀᴇᴀᴄᴛ: ${isEnabled(config.AUTO_RECORDING) ? "✅" : "❌"}
 └───────────────────┘
 
 ┌───────────────────┐
@@ -63,8 +65,8 @@ async (conn, mek, m, { from, reply, isCreator, sender }) => {
 ┌───────────────────┐
   🛡️ *sᴇᴄᴜʀɪᴛʏ*
   • ᴀɴᴛɪ-ʟɪɴᴋ: ${isEnabled(config.ANTI_LINK) ? "✅" : "❌"}
-  • ᴀɴᴛɪ-ʙᴀᴅ: ${isEnabled(config.ANTI_BAD) ? "✅" : "❌"}
-  • ᴀɴᴛɪ-ᴅᴇʟᴇᴛᴇ: ${isEnabled(config.ANTI_DELETE) ? "✅" : "❌"}
+  • ᴀɴᴛɪ-ʙᴀ🇩: ${isEnabled(config.ANTI_BAD) ? "✅" : "❌"}
+  • ᴀɴᴛɪ-🇩ᴇʟᴇᴛᴇ: ${isEnabled(config.ANTI_DELETE) ? "✅" : "❌"}
 └───────────────────┘
 
 📝 *ɴᴏᴛᴇ:* ᴜsᴇ \`${config.PREFIX || '.'}update <ᴠᴀʀ>:<ᴠᴀʟᴜᴇ>\` ᴛᴏ ᴄʜᴀɴɢᴇ sᴇᴛᴛɪɴɢs.
