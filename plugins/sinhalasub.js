@@ -9,23 +9,30 @@ const sessions = new Map();
 // Global Default Footer
 const DEFAULT_FOOTER = "\n\n> *Powered by KIRA-MD*";
 
+// Helper to normalize JID
+function getSenderJid(sender) {
+    return sender ? sender.split(":")[0].split("@")[0] : sender;
+}
+
 // Clear session & timers
-function clearSession(jid) {
-    if (sessions.has(jid)) {
-        const session = sessions.get(jid);
+function clearSession(sender) {
+    const key = getSenderJid(sender);
+    if (sessions.has(key)) {
+        const session = sessions.get(key);
         if (session.timeout) clearTimeout(session.timeout);
-        sessions.delete(jid);
+        sessions.delete(key);
     }
 }
 
 // Reset session inactivity timer (5 minutes)
 function refreshTimeout(sender, reply) {
-    const session = sessions.get(sender);
+    const key = getSenderJid(sender);
+    const session = sessions.get(key);
     if (!session) return;
     if (session.timeout) clearTimeout(session.timeout);
     session.timeout = setTimeout(() => {
-        if (sessions.has(sender)) {
-            sessions.delete(sender);
+        if (sessions.has(key)) {
+            sessions.delete(key);
             reply("⏱️ Session expired due to inactivity." + DEFAULT_FOOTER).catch(() => {});
         }
     }, 5 * 60 * 1000);
@@ -179,7 +186,7 @@ async function sendMovieDocument(conn, from, link, title, label, mek, m) {
     if (m && m.react) await m.react("✅");
 }
 
-// Primary SinhalaSub Command
+// Primary SinhalaSub Command (.ss <movie_name>)
 cmd(
     {
         pattern: "sinhalasub",
@@ -191,6 +198,7 @@ cmd(
     },
     async (conn, mek, m, { from, q, reply, sender }) => {
         try {
+            const userKey = getSenderJid(sender);
             const input = q ? q.trim() : "";
 
             if (!input) {
@@ -232,18 +240,18 @@ cmd(
             results.forEach((item, index) => {
                 msg += `${index + 1}.\n${item.title}\n\n`;
             });
-            msg += "━━━━━━━━━━━━━━━━━━\n\n💬 Reply with the movie number." + DEFAULT_FOOTER;
+            msg += "━━━━━━━━━━━━━━━━━━\n\n💬 Reply with the number only (e.g. 1)." + DEFAULT_FOOTER;
 
-            clearSession(sender);
+            clearSession(userKey);
 
             const timeout = setTimeout(() => {
-                if (sessions.has(sender)) {
-                    sessions.delete(sender);
+                if (sessions.has(userKey)) {
+                    sessions.delete(userKey);
                     reply("⏱️ Session expired due to inactivity." + DEFAULT_FOOTER).catch(() => {});
                 }
             }, 5 * 60 * 1000);
 
-            sessions.set(sender, {
+            sessions.set(userKey, {
                 step: "WAITING_MOVIE_SELECTION",
                 results,
                 timeout
@@ -258,25 +266,28 @@ cmd(
     }
 );
 
-// Listener for sequential plain number / choice responses
+// Strict Listener ONLY for plain numbers / strict selections
 cmd(
     {
         on: "text"
     },
     async (conn, mek, m, { from, reply, sender }) => {
         try {
-            if (!sessions.has(sender)) return;
+            const userKey = getSenderJid(sender);
+            if (!sessions.has(userKey)) return;
 
-            const session = sessions.get(sender);
+            const session = sessions.get(userKey);
             const body = m.text ? m.text.trim() : "";
 
-            // Reject prefix commands from hijacking active session
-            if (body.startsWith(".")) return;
+            // . (prefix) එකකින් පටන් ගන්නා ඕනෑම command එකක් (උදා: .ss 1) මඟහරින්න
+            if (body.startsWith(".") || body.startsWith("!") || body.startsWith("/")) return;
 
-            // STEP 1: MOVIE / SERIES SELECTION (Plain Number)
+            // STEP 1: MOVIE SELECTION (Strictly plain number required)
             if (session.step === "WAITING_MOVIE_SELECTION") {
+                if (!/^\d+$/.test(body)) return; // අංකයක් නොවේ නම් සලකා බලන්නේ නැත
+
                 const choice = parseInt(body);
-                if (isNaN(choice) || choice < 1 || choice > session.results.length) {
+                if (choice < 1 || choice > session.results.length) {
                     if (m.react) await m.react("❌");
                     return await reply(
                         `❌ Invalid choice. Please reply with a number between 1 and ${session.results.length}.` +
@@ -296,7 +307,7 @@ cmd(
                 }
 
                 if (!downloadLinks || downloadLinks.length === 0) {
-                    clearSession(sender);
+                    clearSession(userKey);
                     if (m.react) await m.react("❌");
                     return await reply("❌ No download links available for this selection." + DEFAULT_FOOTER);
                 }
@@ -324,34 +335,30 @@ cmd(
                     });
 
                     const epCard =
-                        `☘️ *Tɪᴛʟᴇ* ➯ *_${movieTitle}_*\n\n` +
+                        `☘️ *TɪᴛʟE* ➯ *_${movieTitle}_*\n\n` +
                         `*❑ 📅 𝗥ᴇʟᴇᴀꜱᴇ 𝗗ᴀᴛᴇ* ➯ *_${details.releaseDate}_*\n` +
                         `*❑ 🌎 𝗖ᴏᴜɴᴛ𝗥ʏ* ➯ *_${details.country}_*\n` +
                         `*❑ ⏱️ 𝗗ᴜ𝗥ᴀᴛɪᴏɴ* ➯ *_${details.duration}_*\n` +
                         `*❑ 🎭 𝗚ᴇɴʀᴇꜱ* ➯ *_${details.genres}_*\n` +
                         `*❑ 🗣️ 𝗟ᴀɴɢᴜᴀɢE* ➯ *_${details.language}_*\n` +
-                        `*❑ 👨🏻‍💼 𝗗ɪʀᴇᴄᴛᴏ𝗥* ➯ *_${details.director}_*\n` +
+                        `*❑ 👨🏻‍💼 𝗗ɪ𝗥ᴇᴄᴛᴏ𝗥* ➯ *_${details.director}_*\n` +
                         `*❑ ⭐ 𝗥ᴀᴛɪɴɢ* ➯ *_${details.rating}_*\n` +
                         `*❑ 🎞️ 𝗤ᴜᴀʟɪᴛʏ* ➯ *_${details.quality}_*\n\n` +
                         `━━━━━━━━━━━━━━━━━━\n\n` +
                         `📺 *Available Episodes*\n\n` +
                         `${epText}\n` +
                         `━━━━━━━━━━━━━━━━━━\n\n` +
-                        `💬 Reply with options:\n` +
-                        `• Single Episode: Reply with episode number (e.g. 2)\n` +
-                        `• All Episodes: Reply *ALL*\n` +
-                        `• Range: Reply *1-10*\n` +
-                        `• Custom List: Reply *2,5,6*` +
+                        `💬 Reply with option number (e.g. 1), ALL, 1-5, or 1,2` +
                         DEFAULT_FOOTER;
 
                     session.step = "WAITING_EPISODE_SELECTION";
                     session.selectedMovie = { ...selectedMovie, title: movieTitle };
                     session.episodes = activeLinks;
-                    refreshTimeout(sender, reply);
+                    refreshTimeout(userKey, reply);
 
-                    if (details.poster && details.poster.trim() !== "" && conn.sendFromUrl) {
+                    if (details.poster && details.poster.trim() !== "") {
                         try {
-                            await conn.sendFromUrl(from, details.poster, epCard, mek);
+                            await conn.sendMessage(from, { image: { url: details.poster }, caption: epCard }, { quoted: mek });
                         } catch (err) {
                             await reply(epCard);
                         }
@@ -368,7 +375,7 @@ cmd(
                 });
 
                 const detailsCard =
-                    `☘️ *Tɪᴛʟᴇ* ➯ *_${movieTitle}_*\n\n` +
+                    `☘️ *TɪᴛʟE* ➯ *_${movieTitle}_*\n\n` +
                     `*❑ 📅 𝗥ᴇʟᴇᴀꜱᴇ 𝗗ᴀᴛᴇ* ➯ *_${details.releaseDate}_*\n` +
                     `*❑ 🌎 𝗖ᴏᴜɴᴛ𝗥ʏ* ➯ *_${details.country}_*\n` +
                     `*❑ ⏱️ 𝗗ᴜ𝗥ᴀᴛɪᴏɴ* ➯ *_${details.duration}_*\n` +
@@ -381,17 +388,17 @@ cmd(
                     `📥 *Available Downloads*\n\n` +
                     `${downloadsText}\n` +
                     `━━━━━━━━━━━━━━━━━━\n\n` +
-                    `💬 Reply with the quality number.` +
+                    `💬 Reply with the quality number only (e.g. 1).` +
                     DEFAULT_FOOTER;
 
                 session.step = "WAITING_QUALITY_SELECTION";
                 session.selectedMovie = { ...selectedMovie, title: movieTitle };
                 session.downloadLinks = activeLinks;
-                refreshTimeout(sender, reply);
+                refreshTimeout(userKey, reply);
 
-                if (details.poster && details.poster.trim() !== "" && conn.sendFromUrl) {
+                if (details.poster && details.poster.trim() !== "") {
                     try {
-                        await conn.sendFromUrl(from, details.poster, detailsCard, mek);
+                        await conn.sendMessage(from, { image: { url: details.poster }, caption: detailsCard }, { quoted: mek });
                     } catch (err) {
                         await reply(detailsCard);
                     }
@@ -407,14 +414,11 @@ cmd(
                 const totalEps = epList.length;
                 let selectedIndices = [];
 
-                const inputStr = body.trim().toUpperCase();
+                const inputStr = body.toUpperCase();
 
-                // Reply: "ALL"
                 if (inputStr === "ALL") {
                     selectedIndices = Array.from({ length: totalEps }, (_, i) => i);
-                }
-                // Reply: Range "1-10"
-                else if (/^\d+\s*-\s*\d+$/.test(inputStr)) {
+                } else if (/^\d+\s*-\s*\d+$/.test(inputStr)) {
                     const parts = inputStr.split("-").map((p) => parseInt(p.trim()));
                     const start = Math.min(parts[0], parts[1]);
                     const end = Math.max(parts[0], parts[1]);
@@ -429,9 +433,7 @@ cmd(
                     for (let i = start; i <= end; i++) {
                         selectedIndices.push(i - 1);
                     }
-                }
-                // Reply: Custom List "2,5,6"
-                else if (/^\d+(?:\s*,\s*\d+)+$/.test(inputStr)) {
+                } else if (/^\d+(?:\s*,\s*\d+)+$/.test(inputStr)) {
                     const parts = inputStr.split(",").map((p) => parseInt(p.trim()));
                     for (const num of parts) {
                         if (isNaN(num) || num < 1 || num > totalEps) {
@@ -445,9 +447,7 @@ cmd(
                             selectedIndices.push(num - 1);
                         }
                     }
-                }
-                // Reply: Single Episode Number "2"
-                else if (/^\d+$/.test(inputStr)) {
+                } else if (/^\d+$/.test(inputStr)) {
                     const num = parseInt(inputStr);
                     if (num < 1 || num > totalEps) {
                         if (m.react) await m.react("❌");
@@ -458,11 +458,7 @@ cmd(
                     }
                     selectedIndices.push(num - 1);
                 } else {
-                    if (m.react) await m.react("❌");
-                    return await reply(
-                        `❌ Invalid format. Reply with plain inputs:\n• Single: 2\n• All: ALL\n• Range: 1-5\n• Custom: 2,5,6` +
-                            DEFAULT_FOOTER
-                    );
+                    return; // Ignore any non-formatted inputs
                 }
 
                 await reply(
@@ -476,14 +472,16 @@ cmd(
                     await sendMovieDocument(conn, from, ep.link, epTitle, ep.label || "HD", mek, m);
                 }
 
-                clearSession(sender);
+                clearSession(userKey);
                 return;
             }
 
-            // STEP 2B: MOVIE QUALITY SELECTION (Plain Number)
+            // STEP 2B: MOVIE QUALITY SELECTION (Strictly plain number required)
             if (session.step === "WAITING_QUALITY_SELECTION") {
+                if (!/^\d+$/.test(body)) return; // අංකයක් නොවේ නම් සලකා බලන්නේ නැත
+
                 const choice = parseInt(body);
-                if (isNaN(choice) || choice < 1 || choice > session.downloadLinks.length) {
+                if (choice < 1 || choice > session.downloadLinks.length) {
                     if (m.react) await m.react("❌");
                     return await reply(
                         `❌ Invalid quality option. Please reply with a number between 1 and ${session.downloadLinks.length}.` +
@@ -496,13 +494,13 @@ cmd(
 
                 await sendMovieDocument(conn, from, selectedDl.link, movieTitle, selectedDl.label, mek, m);
 
-                clearSession(sender);
+                clearSession(userKey);
             }
         } catch (error) {
             console.error("SinhalaSub text handler error:", error);
             if (m.react) await m.react("❌");
             await reply("❌ Error processing request. Please search again." + DEFAULT_FOOTER);
-            clearSession(sender);
+            clearSession(getSenderJid(sender));
         }
     }
 );
