@@ -1,22 +1,16 @@
-const { cmd } = require("../command");
+const { cmd } = require("../lib/command");
 const scraper = require("liyanaarachchi-sinhalasub-scraper-v2");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-// Map to handle user sessions across chats
+// Map to handle active user/chat sessions
 const sessions = new Map();
 
 // Global Default Footer
 const DEFAULT_FOOTER = "\n\n> *Powered by KIRA-MD*";
 
-// Helper to normalize JID
-function getSenderJid(sender) {
-    return sender ? sender.split(":")[0].split("@")[0] : sender;
-}
-
 // Clear session & timers
-function clearSession(sender) {
-    const key = getSenderJid(sender);
+function clearSession(key) {
     if (sessions.has(key)) {
         const session = sessions.get(key);
         if (session.timeout) clearTimeout(session.timeout);
@@ -25,8 +19,7 @@ function clearSession(sender) {
 }
 
 // Reset session inactivity timer (5 minutes)
-function refreshTimeout(sender, reply) {
-    const key = getSenderJid(sender);
+function refreshTimeout(key, reply) {
     const session = sessions.get(key);
     if (!session) return;
     if (session.timeout) clearTimeout(session.timeout);
@@ -186,7 +179,51 @@ async function sendMovieDocument(conn, from, link, title, label, mek, m) {
     if (m && m.react) await m.react("✅");
 }
 
-// Primary SinhalaSub Command (.ss <movie_name>)
+// Helper to parse multi-select reply options (e.g. "1", "1,3", "1-5", "ALL")
+function parseSelections(inputStr, maxCount) {
+    const str = inputStr.trim().toUpperCase();
+    let selectedIndices = [];
+
+    if (str === "ALL") {
+        return Array.from({ length: maxCount }, (_, i) => i);
+    }
+    
+    // Range: "1-5"
+    if (/^\d+\s*-\s*\d+$/.test(str)) {
+        const parts = str.split("-").map((p) => parseInt(p.trim()));
+        const start = Math.min(parts[0], parts[1]);
+        const end = Math.max(parts[0], parts[1]);
+        if (start < 1 || end > maxCount) return null;
+        for (let i = start; i <= end; i++) {
+            selectedIndices.push(i - 1);
+        }
+        return selectedIndices;
+    }
+
+    // Custom List: "1,2,4"
+    if (/^\d+(?:\s*,\s*\d+)+$/.test(str)) {
+        const parts = str.split(",").map((p) => parseInt(p.trim()));
+        for (const num of parts) {
+            if (isNaN(num) || num < 1 || num > maxCount) return null;
+            if (!selectedIndices.includes(num - 1)) {
+                selectedIndices.push(num - 1);
+            }
+        }
+        return selectedIndices;
+    }
+
+    // Single Number: "1"
+    if (/^\d+$/.test(str)) {
+        const num = parseInt(str);
+        if (num < 1 || num > maxCount) return null;
+        selectedIndices.push(num - 1);
+        return selectedIndices;
+    }
+
+    return null;
+}
+
+// Primary SinhalaSub Command
 cmd(
     {
         pattern: "sinhalasub",
@@ -198,8 +235,8 @@ cmd(
     },
     async (conn, mek, m, { from, q, reply, sender }) => {
         try {
-            const userKey = getSenderJid(sender);
             const input = q ? q.trim() : "";
+            const sessionKey = from || sender;
 
             if (!input) {
                 if (m.react) await m.react("❌");
@@ -240,18 +277,18 @@ cmd(
             results.forEach((item, index) => {
                 msg += `${index + 1}.\n${item.title}\n\n`;
             });
-            msg += "━━━━━━━━━━━━━━━━━━\n\n💬 Reply with the number only (e.g. 1)." + DEFAULT_FOOTER;
+            msg += "━━━━━━━━━━━━━━━━━━\n\n💬 Reply with the movie number." + DEFAULT_FOOTER;
 
-            clearSession(userKey);
+            clearSession(sessionKey);
 
             const timeout = setTimeout(() => {
-                if (sessions.has(userKey)) {
-                    sessions.delete(userKey);
+                if (sessions.has(sessionKey)) {
+                    sessions.delete(sessionKey);
                     reply("⏱️ Session expired due to inactivity." + DEFAULT_FOOTER).catch(() => {});
                 }
             }, 5 * 60 * 1000);
 
-            sessions.set(userKey, {
+            sessions.set(sessionKey, {
                 step: "WAITING_MOVIE_SELECTION",
                 results,
                 timeout
@@ -266,28 +303,26 @@ cmd(
     }
 );
 
-// Strict Listener ONLY for plain numbers / strict selections
+// Listener for sequential plain number / choice responses
 cmd(
     {
         on: "text"
     },
     async (conn, mek, m, { from, reply, sender }) => {
         try {
-            const userKey = getSenderJid(sender);
-            if (!sessions.has(userKey)) return;
+            const sessionKey = from || sender;
+            if (!sessions.has(sessionKey)) return;
 
-            const session = sessions.get(userKey);
+            const session = sessions.get(sessionKey);
             const body = m.text ? m.text.trim() : "";
 
-            // . (prefix) එකකින් පටන් ගන්නා ඕනෑම command එකක් (උදා: .ss 1) මඟහරින්න
-            if (body.startsWith(".") || body.startsWith("!") || body.startsWith("/")) return;
+            // Reject prefix commands from hijacking active session
+            if (body.startsWith(".") || body.startsWith("/") || body.startsWith("!")) return;
 
-            // STEP 1: MOVIE SELECTION (Strictly plain number required)
+            // STEP 1: MOVIE / SERIES SELECTION (Plain Number)
             if (session.step === "WAITING_MOVIE_SELECTION") {
-                if (!/^\d+$/.test(body)) return; // අංකයක් නොවේ නම් සලකා බලන්නේ නැත
-
                 const choice = parseInt(body);
-                if (choice < 1 || choice > session.results.length) {
+                if (isNaN(choice) || choice < 1 || choice > session.results.length) {
                     if (m.react) await m.react("❌");
                     return await reply(
                         `❌ Invalid choice. Please reply with a number between 1 and ${session.results.length}.` +
@@ -307,7 +342,7 @@ cmd(
                 }
 
                 if (!downloadLinks || downloadLinks.length === 0) {
-                    clearSession(userKey);
+                    clearSession(sessionKey);
                     if (m.react) await m.react("❌");
                     return await reply("❌ No download links available for this selection." + DEFAULT_FOOTER);
                 }
@@ -341,24 +376,28 @@ cmd(
                         `*❑ ⏱️ 𝗗ᴜ𝗥ᴀᴛɪᴏɴ* ➯ *_${details.duration}_*\n` +
                         `*❑ 🎭 𝗚ᴇɴʀᴇꜱ* ➯ *_${details.genres}_*\n` +
                         `*❑ 🗣️ 𝗟ᴀɴɢᴜᴀɢE* ➯ *_${details.language}_*\n` +
-                        `*❑ 👨🏻‍💼 𝗗ɪ𝗥ᴇᴄᴛᴏ𝗥* ➯ *_${details.director}_*\n` +
+                        `*❑ 👨🏻‍💼 𝗗ɪʀᴇᴄᴛᴏ𝗥* ➯ *_${details.director}_*\n` +
                         `*❑ ⭐ 𝗥ᴀᴛɪɴɢ* ➯ *_${details.rating}_*\n` +
                         `*❑ 🎞️ 𝗤ᴜᴀʟɪᴛʏ* ➯ *_${details.quality}_*\n\n` +
                         `━━━━━━━━━━━━━━━━━━\n\n` +
                         `📺 *Available Episodes*\n\n` +
                         `${epText}\n` +
                         `━━━━━━━━━━━━━━━━━━\n\n` +
-                        `💬 Reply with option number (e.g. 1), ALL, 1-5, or 1,2` +
+                        `💬 Reply with options:\n` +
+                        `• Single Episode: Reply *2*\n` +
+                        `• Range: Reply *1-5*\n` +
+                        `• Custom List: Reply *2,4,6*\n` +
+                        `• All Episodes: Reply *ALL*` +
                         DEFAULT_FOOTER;
 
                     session.step = "WAITING_EPISODE_SELECTION";
                     session.selectedMovie = { ...selectedMovie, title: movieTitle };
                     session.episodes = activeLinks;
-                    refreshTimeout(userKey, reply);
+                    refreshTimeout(sessionKey, reply);
 
-                    if (details.poster && details.poster.trim() !== "") {
+                    if (details.poster && details.poster.trim() !== "" && conn.sendFromUrl) {
                         try {
-                            await conn.sendMessage(from, { image: { url: details.poster }, caption: epCard }, { quoted: mek });
+                            await conn.sendFromUrl(from, details.poster, epCard, mek);
                         } catch (err) {
                             await reply(epCard);
                         }
@@ -388,17 +427,17 @@ cmd(
                     `📥 *Available Downloads*\n\n` +
                     `${downloadsText}\n` +
                     `━━━━━━━━━━━━━━━━━━\n\n` +
-                    `💬 Reply with the quality number only (e.g. 1).` +
+                    `💬 Reply with quality numbers (e.g., *1*, *1,2*, or *ALL*).` +
                     DEFAULT_FOOTER;
 
                 session.step = "WAITING_QUALITY_SELECTION";
                 session.selectedMovie = { ...selectedMovie, title: movieTitle };
                 session.downloadLinks = activeLinks;
-                refreshTimeout(userKey, reply);
+                refreshTimeout(sessionKey, reply);
 
-                if (details.poster && details.poster.trim() !== "") {
+                if (details.poster && details.poster.trim() !== "" && conn.sendFromUrl) {
                     try {
-                        await conn.sendMessage(from, { image: { url: details.poster }, caption: detailsCard }, { quoted: mek });
+                        await conn.sendFromUrl(from, details.poster, detailsCard, mek);
                     } catch (err) {
                         await reply(detailsCard);
                     }
@@ -411,58 +450,18 @@ cmd(
             // STEP 2A: TV SERIES EPISODE SELECTION
             if (session.step === "WAITING_EPISODE_SELECTION") {
                 const epList = session.episodes;
-                const totalEps = epList.length;
-                let selectedIndices = [];
+                const selectedIndices = parseSelections(body, epList.length);
 
-                const inputStr = body.toUpperCase();
-
-                if (inputStr === "ALL") {
-                    selectedIndices = Array.from({ length: totalEps }, (_, i) => i);
-                } else if (/^\d+\s*-\s*\d+$/.test(inputStr)) {
-                    const parts = inputStr.split("-").map((p) => parseInt(p.trim()));
-                    const start = Math.min(parts[0], parts[1]);
-                    const end = Math.max(parts[0], parts[1]);
-
-                    if (start < 1 || end > totalEps) {
-                        if (m.react) await m.react("❌");
-                        return await reply(
-                            `❌ Range out of bounds. Available episodes: 1 to ${totalEps}.` +
-                                DEFAULT_FOOTER
-                        );
-                    }
-                    for (let i = start; i <= end; i++) {
-                        selectedIndices.push(i - 1);
-                    }
-                } else if (/^\d+(?:\s*,\s*\d+)+$/.test(inputStr)) {
-                    const parts = inputStr.split(",").map((p) => parseInt(p.trim()));
-                    for (const num of parts) {
-                        if (isNaN(num) || num < 1 || num > totalEps) {
-                            if (m.react) await m.react("❌");
-                            return await reply(
-                                `❌ Invalid episode number ${num}. Available episodes: 1 to ${totalEps}.` +
-                                    DEFAULT_FOOTER
-                            );
-                        }
-                        if (!selectedIndices.includes(num - 1)) {
-                            selectedIndices.push(num - 1);
-                        }
-                    }
-                } else if (/^\d+$/.test(inputStr)) {
-                    const num = parseInt(inputStr);
-                    if (num < 1 || num > totalEps) {
-                        if (m.react) await m.react("❌");
-                        return await reply(
-                            `❌ Invalid choice. Reply with a number between 1 and ${totalEps}.` +
-                                DEFAULT_FOOTER
-                        );
-                    }
-                    selectedIndices.push(num - 1);
-                } else {
-                    return; // Ignore any non-formatted inputs
+                if (!selectedIndices || selectedIndices.length === 0) {
+                    if (m.react) await m.react("❌");
+                    return await reply(
+                        `❌ Invalid selection. Available episodes: 1 to ${epList.length}.\nExamples:\n• Single: 2\n• Range: 1-5\n• Custom: 1,3\n• All: ALL` +
+                            DEFAULT_FOOTER
+                    );
                 }
 
                 await reply(
-                    `📥 *Starting download for ${selectedIndices.length} episode(s)...*` +
+                    `📥 *Starting download for ${selectedIndices.length} item(s)...*` +
                         DEFAULT_FOOTER
                 );
 
@@ -472,35 +471,43 @@ cmd(
                     await sendMovieDocument(conn, from, ep.link, epTitle, ep.label || "HD", mek, m);
                 }
 
-                clearSession(userKey);
+                // Keep session open so user can pick other episodes/qualities within timer
+                refreshTimeout(sessionKey, reply);
                 return;
             }
 
-            // STEP 2B: MOVIE QUALITY SELECTION (Strictly plain number required)
+            // STEP 2B: MOVIE QUALITY SELECTION
             if (session.step === "WAITING_QUALITY_SELECTION") {
-                if (!/^\d+$/.test(body)) return; // අංකයක් නොවේ නම් සලකා බලන්නේ නැත
+                const dlList = session.downloadLinks;
+                const selectedIndices = parseSelections(body, dlList.length);
 
-                const choice = parseInt(body);
-                if (choice < 1 || choice > session.downloadLinks.length) {
+                if (!selectedIndices || selectedIndices.length === 0) {
                     if (m.react) await m.react("❌");
                     return await reply(
-                        `❌ Invalid quality option. Please reply with a number between 1 and ${session.downloadLinks.length}.` +
+                        `❌ Invalid choice. Reply with a valid quality number (1 to ${dlList.length}) or multi-option (e.g., 1,2).` +
                             DEFAULT_FOOTER
                     );
                 }
 
-                const selectedDl = session.downloadLinks[choice - 1];
-                const movieTitle = session.selectedMovie.title;
+                await reply(
+                    `📥 *Sending ${selectedIndices.length} requested file(s)...*` +
+                        DEFAULT_FOOTER
+                );
 
-                await sendMovieDocument(conn, from, selectedDl.link, movieTitle, selectedDl.label, mek, m);
+                for (const idx of selectedIndices) {
+                    const selectedDl = dlList[idx];
+                    const movieTitle = session.selectedMovie.title;
+                    await sendMovieDocument(conn, from, selectedDl.link, movieTitle, selectedDl.label, mek, m);
+                }
 
-                clearSession(userKey);
+                // Keep session open so user can pick another quality option
+                refreshTimeout(sessionKey, reply);
             }
         } catch (error) {
             console.error("SinhalaSub text handler error:", error);
             if (m.react) await m.react("❌");
             await reply("❌ Error processing request. Please search again." + DEFAULT_FOOTER);
-            clearSession(getSenderJid(sender));
+            clearSession(from || sender);
         }
     }
 );
