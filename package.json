@@ -34,7 +34,8 @@
     "megajs": "^1.3.4",
     "liyanaarachchi-sinhalasub-scraper-v2": "1.0.4",
     "liyanaarachchi-animeheavenme":"1.0.1",
-    "liyanaarachchi-thenkiri-scrap":"1.0.0"
+    "liyanaarachchi-thenkiri-scrap":"1.0.0",
+    "cheerio": "latest"
 
   }
 }
