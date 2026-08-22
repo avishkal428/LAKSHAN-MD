@@ -8,17 +8,18 @@ cmd({
     category: "download",
     filename: __filename
 },
-async(conn, mek, m, { from, q, reply }) => {
+async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply('❌ කරුණාකර TikTok link එකක් ලබාදෙන්න!\n\n*Example:* .tiktok https://vt.tiktok.com/ZSrGd2UFs/')
+        if (!q) return reply('❌ කරුණාකර TikTok link එකක් ලබාදෙන්න!')
 
-        reply('⬇️ *Downloading TikTok video...*')
+        await reply('⬇️ *Downloading TikTok video...*')
 
         const apiUrl = `https://www.ominisave.store/api/tiktok?url=${encodeURIComponent(q)}`
-        const { data } = await axios.get(apiUrl)
+        const res = await axios.get(apiUrl)
+        const data = res.data
 
         if (!data || !data.status || !data.downloads) {
-            return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය. Link එක පරීක්ෂා කරන්න.')
+            return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය. Link එක නැවත පරීක්ෂා කරන්න.')
         }
 
         let caption = `🎵 *TIKTOK DOWNLOADER* 🎵\n\n`
@@ -28,7 +29,6 @@ async(conn, mek, m, { from, q, reply }) => {
         caption += `❤️ *Likes:* ${data.stats?.likes?.toLocaleString() || 0}\n\n`
         caption += `👨‍💻 *Created By:* ${data.creator || '@SaviyaKolla'}`
 
-        // Send Video
         if (data.downloads.video) {
             await conn.sendMessage(from, { 
                 video: { url: data.downloads.video }, 
@@ -36,7 +36,6 @@ async(conn, mek, m, { from, q, reply }) => {
             }, { quoted: mek })
         }
 
-        // Send Audio
         if (data.downloads.music) {
             await conn.sendMessage(from, { 
                 audio: { url: data.downloads.music }, 
@@ -47,6 +46,6 @@ async(conn, mek, m, { from, q, reply }) => {
 
     } catch (e) {
         console.error(e)
-        reply(`❌ දෝෂයක් සිදු විය: ${e.message}`)
+        reply(`❌ Error: ${e.message}`)
     }
 })
