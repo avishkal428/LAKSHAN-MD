@@ -2,8 +2,8 @@ const { cmd } = require('../command')
 const axios = require('axios')
 
 cmd({
-    pattern: "tiktok",
-    alias: ["tt", "ttdl"],
+    pattern: "tt",
+    alias: ["tiktok", "ttdl"],
     desc: "Download TikTok Videos",
     category: "download",
     filename: __filename
@@ -19,14 +19,12 @@ async (conn, mek, m, { from, q, reply }) => {
         const data = res.data
 
         if (!data || !data.status || !data.downloads) {
-            return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය. Link එක නැවත පරීක්ෂා කරන්න.')
+            return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය.')
         }
 
         let caption = `🎵 *TIKTOK DOWNLOADER* 🎵\n\n`
         caption += `👤 *Author:* ${data.author || 'N/A'}\n`
         caption += `📝 *Title:* ${data.title || 'No Title'}\n\n`
-        caption += `👁️ *Views:* ${data.stats?.views?.toLocaleString() || 0}\n`
-        caption += `❤️ *Likes:* ${data.stats?.likes?.toLocaleString() || 0}\n\n`
         caption += `👨‍💻 *Created By:* ${data.creator || '@SaviyaKolla'}`
 
         if (data.downloads.video) {
