@@ -137,7 +137,7 @@ ${uniqueCmds.length > 0
 `.trim();
 
                     await conn.sendMessage(msg.key.remoteJid, {
-                        image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/2cs82r.jpg' },
+                        image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/uqofdi.jpg' },
                         caption: subMenu
                     }, { quoted: msg });
 
@@ -194,7 +194,7 @@ cmd({
 }, async (conn, mek, m, { from }) => {
     const config = await readEnv();
     await conn.sendMessage(from, { 
-        text: `👑 *Bot Developer:* ${config.OWNER_NAME || '𝐀𝐕𝐈𝐒𝐇𝐊𝐀 & 𝐀𝐊𝐀𝐒𝐇'}\n📞 *Contact Number:* +${config.OWNER_NUMBER || '94725337806'}` 
+        text: `👑 *Bot Developer:* ${config.OWNER_NAME || '𝐀𝐕𝐈𝐒𝐇𝐊𝐀'}\n📞 *Contact Number:* +${config.OWNER_NUMBER || '94724098953'}` 
     }, { quoted: mek });
 });
 
