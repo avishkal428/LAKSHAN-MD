@@ -75,7 +75,7 @@ ${categories.map((cat, i) => `┃ ${i + 1} ${cat.emoji} ${cat.title}`).join('\n'
 `.trim();
 
         const sentMsg = await conn.sendMessage(from, {
-            image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/2cs82r.jpg' },
+            image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/uqofdi.jpg' },
             caption: menuText,
             contextInfo: { mentionedJid: [sender] }
         }, { quoted: mek });
