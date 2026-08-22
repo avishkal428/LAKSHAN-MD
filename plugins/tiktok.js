@@ -1,4 +1,4 @@
-const { cmd, commands } = require('../command')
+const { cmd } = require('../command')
 const axios = require('axios')
 
 cmd({
@@ -8,44 +8,45 @@ cmd({
     category: "download",
     filename: __filename
 },
-async(conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
+async(conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return reply('❌ කරුණාකර TikTok link එකක් ලබාදෙන්න!\n\nExample: .tiktok https://vt.tiktok.com/ZSrGd2UFs/')
+        if (!q) return reply('❌ කරුණාකර TikTok link එකක් ලබාදෙන්න!\n\n*Example:* .tiktok https://vt.tiktok.com/ZSrGd2UFs/')
 
         reply('⬇️ *Downloading TikTok video...*')
 
         const apiUrl = `https://www.ominisave.store/api/tiktok?url=${encodeURIComponent(q)}`
-        const response = await axios.get(apiUrl)
-        const res = response.data
+        const { data } = await axios.get(apiUrl)
 
-        if (!res.status || !res.downloads) {
-            return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය. Link එක නැවත පරීක්ෂා කරන්න.')
+        if (!data || !data.status || !data.downloads) {
+            return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය. Link එක පරීක්ෂා කරන්න.')
         }
 
         let caption = `🎵 *TIKTOK DOWNLOADER* 🎵\n\n`
-        caption += `👤 *Author:* ${res.author || 'N/A'}\n`
-        caption += `📝 *Title:* ${res.title || 'No Title'}\n\n`
-        caption += `👁️ *Views:* ${res.stats?.views?.toLocaleString() || 0}\n`
-        caption += `❤️ *Likes:* ${res.stats?.likes?.toLocaleString() || 0}\n\n`
-        caption += `👨‍💻 *Created By:* ${res.creator || '@SaviyaKolla'}`
+        caption += `👤 *Author:* ${data.author || 'N/A'}\n`
+        caption += `📝 *Title:* ${data.title || 'No Title'}\n\n`
+        caption += `👁️ *Views:* ${data.stats?.views?.toLocaleString() || 0}\n`
+        caption += `❤️ *Likes:* ${data.stats?.likes?.toLocaleString() || 0}\n\n`
+        caption += `👨‍💻 *Created By:* ${data.creator || '@SaviyaKolla'}`
 
         // Send Video
-        await conn.sendMessage(from, { 
-            video: { url: res.downloads.video }, 
-            caption: caption 
-        }, { quoted: mek })
-
-        // Send Audio if available
-        if (res.downloads.music) {
+        if (data.downloads.video) {
             await conn.sendMessage(from, { 
-                audio: { url: res.downloads.music }, 
+                video: { url: data.downloads.video }, 
+                caption: caption 
+            }, { quoted: mek })
+        }
+
+        // Send Audio
+        if (data.downloads.music) {
+            await conn.sendMessage(from, { 
+                audio: { url: data.downloads.music }, 
                 mimetype: 'audio/mp4',
                 fileName: 'tiktok.mp3'
             }, { quoted: mek })
         }
 
     } catch (e) {
-        console.log(e)
-        reply(`❌ Error එකක් ආවා: ${e.message}`)
+        console.error(e)
+        reply(`❌ දෝෂයක් සිදු විය: ${e.message}`)
     }
 })
