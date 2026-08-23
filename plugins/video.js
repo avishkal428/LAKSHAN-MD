@@ -1,8 +1,11 @@
 const { cmd } = require('../command')
-const axios = require('axios')
+const ytdl = require('@distube/ytdl-core')
 const yts = require('yt-search')
 
-// YouTube Link එකෙන් Video ID එක පමණක් වෙන් කරගන්නා Function එක
+// Active Quality Request තබා ගැනීමට Map එකක්
+const videoRequests = new Map()
+
+// YouTube Link එකෙන් ID වෙන් කරගැනීම
 function extractYouTubeId(url) {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/
     const match = url.match(regExp)
@@ -12,7 +15,7 @@ function extractYouTubeId(url) {
 cmd({
     pattern: "video",
     alias: ["ytv", "ytmp4"],
-    desc: "Download YouTube Videos & Shorts",
+    desc: "Download YouTube Videos with Quality",
     category: "download",
     filename: __filename
 },
@@ -20,19 +23,15 @@ async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply('🎬 කරුණාකර Video / Shorts Link එකක් හෝ නමක් ලබාදෙන්න!')
 
-        await reply('🔍 *Fetching Video...*')
+        await reply('🔍 *Fetching Quality Options...*')
 
         let videoUrl = q
         let videoTitle = ''
 
-        // Link එකක් නම් Extra Parameters අයින් කර Clean URL එකක් හදා ගැනීම
         if (q.startsWith('http://') || q.startsWith('https://')) {
             const videoId = extractYouTubeId(q)
-            if (videoId) {
-                videoUrl = `https://www.youtube.com/watch?v=${videoId}`
-            }
+            if (videoId) videoUrl = `https://www.youtube.com/watch?v=${videoId}`
         } else {
-            // Text Search එකක් නම්
             const search = await yts(q)
             const data = search.videos[0]
             if (!data) return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය.')
@@ -40,57 +39,70 @@ async (conn, mek, m, { from, q, reply }) => {
             videoTitle = data.title
         }
 
-        // Working APIs List
-        const apiEndpoints = [
-            `https://www.ominisave.store/api/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-            `https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-            `https://api.dark-yasiya.site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`
-        ]
+        // YouTube Video Info ලබා ගැනීම
+        const info = await ytdl.getInfo(videoUrl)
+        const formats = ytdl.filterFormats(info.formats, 'videoandaudio')
 
-        let downloadUrl = null
-        let title = videoTitle
+        if (!formats || formats.length === 0) {
+            return reply('❌ Download කළ හැකි Quality Options සොයා ගැනීමට නොහැකි විය.')
+        }
 
-        for (const url of apiEndpoints) {
-            try {
-                const res = await axios.get(url, { timeout: 12000 })
-                if (res.data) {
-                    // Ominisave API
-                    if (res.data.status && res.data.result && (res.data.result.downloadLink || res.data.result.url)) {
-                        downloadUrl = res.data.result.downloadLink || res.data.result.url
-                        title = res.data.result.title || title
-                        break
-                    }
-                    // David Cyril API
-                    else if (res.data.success && res.data.result && res.data.result.download_url) {
-                        downloadUrl = res.data.result.download_url
-                        title = res.data.result.title || title
-                        break
-                    }
-                    // Dark Yasiya API
-                    else if (res.data.result && res.data.result.og_link) {
-                        downloadUrl = res.data.result.og_link
-                        title = res.data.result.title || title
-                        break
-                    }
-                }
-            } catch (err) {
-                console.log(`API Fetch Failed for endpoint: ${url}`)
+        // Available Qualities වෙන් කර ගැනීම
+        let qualityMap = new Map()
+        let menuText = `🎬 *YOUTUBE VIDEO DOWNLOADER* 🎬\n\n`
+        menuText += `📝 *Title:* ${info.videoDetails.title}\n`
+        menuText += `⏱️ *Duration:* ${info.videoDetails.lengthSeconds}s\n\n`
+        menuText += `*කරුණාකර ඔබට අවශ්‍ය Quality එකේ අංකය Reply කරන්න:* \n\n`
+
+        let index = 1
+        formats.forEach(f => {
+            if (f.qualityLabel && !qualityMap.has(f.qualityLabel)) {
+                qualityMap.set(index.toString(), {
+                    quality: f.qualityLabel,
+                    url: f.url
+                })
+                menuText += `*${index}* - ${f.qualityLabel}\n`
+                index++
             }
-        }
+        })
 
-        if (!downloadUrl) {
-            return reply('❌ වීඩියෝ එක Download කිරීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
-        }
+        const sentMsg = await conn.sendMessage(from, { text: menuText }, { quoted: mek })
 
-        let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${title || 'YouTube Video'}`
-
-        await conn.sendMessage(from, { 
-            video: { url: downloadUrl }, 
-            caption: caption 
-        }, { quoted: mek })
+        // Data එක Save කිරීම
+        videoRequests.set(from, {
+            options: qualityMap,
+            title: info.videoDetails.title,
+            messageId: sentMsg.key.id
+        })
 
     } catch (e) {
         console.error(e)
         reply(`❌ Error: ${e.message}`)
+    }
+})
+
+// User Reply එක Catch කර Video එක Send කිරීම
+cmd({
+    on: "text"
+},
+async (conn, mek, m, { from, body, reply }) => {
+    if (videoRequests.has(from)) {
+        const reqData = videoRequests.get(from)
+        const choice = body.trim()
+
+        if (reqData.options.has(choice)) {
+            const selected = reqData.options.get(choice)
+
+            await reply(`⬇️ *Downloading ${selected.quality} Video...*`)
+
+            let caption = `🎬 *${reqData.title}*\n📊 *Quality:* ${selected.quality}`
+
+            await conn.sendMessage(from, { 
+                video: { url: selected.url }, 
+                caption: caption 
+            }, { quoted: mek })
+
+            videoRequests.delete(from) // Request එක ඉවත් කිරීම
+        }
     }
 })
