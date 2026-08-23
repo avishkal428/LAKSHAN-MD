@@ -5,10 +5,9 @@ const axios = require('axios');
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "ᴀᴠɪꜱʜᴋᴀ ヤ";
 
-// Active Chat Tracker (JID මත පදනම්ව)
 const thenkiriSessions = new Map();
 
-// 1️⃣ MAIN COMMAND: Search & Display Movies
+// 1. COMMAND: Search Movies
 cmd({
     pattern: "tenkiri",
     alias: ["tk", "thenkiri"],
@@ -50,7 +49,6 @@ async (socket, msg, m, { from, args }) => {
 
         await socket.sendMessage(chatJid, { text: listText }, { quoted: msg });
 
-        // Save active session for the chat
         thenkiriSessions.set(chatJid, {
             step: 'SELECTION',
             results: tkResults,
@@ -65,42 +63,37 @@ async (socket, msg, m, { from, args }) => {
     }
 });
 
-// 2️⃣ AUTO REPLY LISTENER: Same File Single Handler
+// 2. REPLY LISTENER (Auto Handle Reply Numbers)
 cmd({
     on: "body"
 },
 async (socket, msg, m, { from, body, isCmd }) => {
     try {
-        // Command එකක් නම් Reply Listener එක Ignore කරන්න
         if (isCmd) return;
 
         const chatJid = from;
         const session = thenkiriSessions.get(chatJid);
 
         if (!session) return;
-
-        // Session timeout check (5 Minutes)
         if (Date.now() - session.timestamp > 300000) {
             thenkiriSessions.delete(chatJid);
             return;
         }
 
-        // Quoted message එකක් නැත්නම් Ignore කරන්න
         if (!m.quoted) return;
 
         const textMsg = body ? body.trim() : "";
         if (!textMsg || isNaN(textMsg)) return;
 
-        // ----------------------------------------------------
+        const choiceIndex = parseInt(textMsg) - 1;
+
         // STEP 1: MOVIE SELECTION
-        // ----------------------------------------------------
         if (session.step === 'SELECTION') {
-            const choice = parseInt(textMsg) - 1;
             const tkResults = session.results;
 
-            if (choice < 0 || choice >= tkResults.length) return;
+            if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
 
-            const selectedMovie = tkResults[choice];
+            const selectedMovie = tkResults[choiceIndex];
             const statusMsg = await socket.sendMessage(chatJid, { text: `⏳ *Fetching Details...*` }, { quoted: msg });
 
             const options = await scraper.getDownloadOptions(selectedMovie.link);
@@ -164,9 +157,9 @@ async (socket, msg, m, { from, body, isCmd }) => {
             captionText += `----------------------------------------\n\n`;
             captionText += `📥 *Select Download Quality:*\n\n`;
 
-            options.forEach((opt, i) => {
+            options.forEach((opt, idx) => {
                 const qName = opt.quality || opt.name || 'Download Movie';
-                captionText += `*${i + 1}.* ${qName}\n`;
+                captionText += `*${idx + 1}.* ${qName}\n`;
             });
 
             captionText += `\n> ${FOOTER}`;
@@ -189,16 +182,13 @@ async (socket, msg, m, { from, body, isCmd }) => {
             });
         }
 
-        // ----------------------------------------------------
-        // STEP 2: QUALITY / DOWNLOAD SELECTION
-        // ----------------------------------------------------
+        // STEP 2: QUALITY SELECTION & SEND FILE
         else if (session.step === 'DOWNLOAD') {
-            const choiceNum = parseInt(textMsg) - 1;
             const options = session.options;
 
-            if (choiceNum < 0 || choiceNum >= options.length) return;
+            if (choiceIndex < 0 || choiceIndex >= options.length) return;
 
-            const selectedOption = options[choiceNum];
+            const selectedOption = options[choiceIndex];
             const dlStatusMsg = await socket.sendMessage(chatJid, { text: `⚡ *Downloading Movie File...*` }, { quoted: msg });
 
             const finalDirectLink = await scraper.bypassDownloadwella(selectedOption.link);
@@ -216,7 +206,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
             const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
 
             try {
-                // Try Sending Direct Document File
                 await socket.sendMessage(chatJid, {
                     document: { url: finalDirectLink },
                     mimetype: 'video/x-matroska',
@@ -232,7 +221,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
             } catch (fileErr) {
                 console.error("File upload error (2GB+ Limit):", fileErr.message);
 
-                // Fallback for large files
                 await socket.sendMessage(chatJid, {
                     text: `🍿 *${session.movieTitle}*\n📌 *Quality:* ${qName}\n\n⚠️ *File size exceeds WhatsApp limit (2GB+).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                 }, { quoted: msg });
