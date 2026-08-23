@@ -5,11 +5,9 @@ const axios = require('axios');
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
-if (!global.thenkiriSessions) {
-    global.thenkiriSessions = new Map();
-}
+if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
+const activeProcessing = new Set();
 
-// Optimized TMDB Title Cleanup
 function cleanTitleForTMDB(rawTitle) {
     return rawTitle
         .split('|')[0]
@@ -51,7 +49,7 @@ async function fetchMediaDetails(rawTitle) {
     return null;
 }
 
-// SEARCH COMMAND
+// THENKIRI COMMAND
 cmd({
     pattern: "thenkiri",
     alias: ["tk", "movie", "tenkiri", "tv"],
@@ -95,7 +93,7 @@ cmd({
     }
 });
 
-// SINGLE RESPONSIBILITY REPLY LISTENER
+// THENKIRI REPLY LISTENER
 cmd({
     on: "body"
 },
@@ -103,15 +101,16 @@ async (socket, msg, m, { from, body, isCmd }) => {
     try {
         if (isCmd) return;
         if (!global.thenkiriSessions.has(from)) return;
+        if (activeProcessing.has(from)) return;
+
+        const textMsg = body ? body.trim() : "";
+        if (textMsg === "" || isNaN(textMsg)) return;
 
         const session = global.thenkiriSessions.get(from);
         if (Date.now() - session.timestamp > 300000) {
             global.thenkiriSessions.delete(from);
             return;
         }
-
-        const textMsg = body ? body.trim() : "";
-        if (textMsg === "" || isNaN(textMsg)) return;
 
         const selectedNum = parseInt(textMsg);
 
@@ -122,6 +121,8 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
 
+            activeProcessing.add(from);
+
             const selectedMovie = tkResults[choiceIndex];
             const statusMsg = await socket.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: msg });
 
@@ -130,6 +131,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
             if (!options || options.length === 0) {
                 await socket.sendMessage(from, { text: `❌ No download links found.` }, { quoted: msg });
                 global.thenkiriSessions.delete(from);
+                activeProcessing.delete(from);
                 return;
             }
 
@@ -168,11 +170,11 @@ async (socket, msg, m, { from, body, isCmd }) => {
             captionText += `📖 *Plot:* ${plot}\n\n`;
             captionText += `🎬 *Trailer:* ${trailerLink}\n`;
             captionText += `----------------------------------------\n\n`;
-            captionText += `📥 *Select Option to Download:*\n`;
-            captionText += `*0.* 📦 *ALL EPISODES / ALL QUALITIES*\n\n`;
+            captionText += `📥 *Select Quality / Episode to Download:*\n\n`;
+            captionText += `*0.* 📦 *ALL EPISODES / QUALITIES (AUTO DOWNLOAD ALL)*\n\n`;
 
             options.forEach((opt, idx) => {
-                const qName = opt.quality || opt.name || 'Download File';
+                const qName = opt.quality || opt.name || `Episode ${idx + 1}`;
                 captionText += `*${idx + 1}.* ${qName}\n`;
             });
 
@@ -185,7 +187,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 caption: captionText
             }, { quoted: msg });
 
-            // Session Step Update
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
                 options: options,
@@ -193,16 +194,17 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 timestamp: Date.now()
             });
 
+            activeProcessing.delete(from);
         } 
-        
-        // STEP 2: DOWNLOAD HANDLING (Single or ALL)
+
+        // STEP 2: DOWNLOAD HANDLING
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
 
-            // Delete session to prevent duplicate runs
             global.thenkiriSessions.delete(from);
+            activeProcessing.add(from);
 
-            // OPTION 0: DOWNLOAD ALL EPISODES / ALL QUALITIES
+            // OPTION 0: AUTO DOWNLOAD ALL EPISODES
             if (selectedNum === 0) {
                 await socket.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: msg });
 
@@ -227,48 +229,48 @@ async (socket, msg, m, { from, body, isCmd }) => {
                         }
                     }
                 }
-                await socket.sendMessage(from, { text: `✅ *ALL (${options.length}) Files Processed!*` }, { quoted: msg });
+                await socket.sendMessage(from, { text: `✅ *ALL (${options.length}) Files Uploaded!*` }, { quoted: msg });
             } 
-            
-            // INDIVIDUAL EPISODE SELECTION (1, 2, 3...)
+            // INDIVIDUAL EPISODE SELECTION
             else {
                 const choiceIndex = selectedNum - 1;
-                if (choiceIndex < 0 || choiceIndex >= options.length) return;
+                if (choiceIndex >= 0 && choiceIndex < options.length) {
+                    const selectedOption = options[choiceIndex];
+                    const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: msg });
 
-                const selectedOption = options[choiceIndex];
-                const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: msg });
+                    const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
 
-                const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
+                    if (!finalDirectLink) {
+                        await socket.sendMessage(from, { text: `❌ Link bypass failed.`, edit: dlStatusMsg.key });
+                    } else {
+                        const qName = selectedOption.quality || selectedOption.name || 'Download File';
+                        const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
 
-                if (!finalDirectLink) {
-                    await socket.sendMessage(from, { text: `❌ Link bypass failed.`, edit: dlStatusMsg.key });
-                    return;
-                }
+                        try {
+                            await socket.sendMessage(from, {
+                                document: { url: finalDirectLink },
+                                mimetype: 'video/x-matroska',
+                                fileName: safeFileName,
+                                caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
+                            }, { quoted: msg });
 
-                const qName = selectedOption.quality || selectedOption.name || 'Download File';
-                const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
+                            await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
 
-                try {
-                    await socket.sendMessage(from, {
-                        document: { url: finalDirectLink },
-                        mimetype: 'video/x-matroska',
-                        fileName: safeFileName,
-                        caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
-                    }, { quoted: msg });
+                        } catch (fileErr) {
+                            await socket.sendMessage(from, {
+                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds limit.*\n\n🔗 *Direct Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                            }, { quoted: msg });
 
-                    await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-
-                } catch (fileErr) {
-                    await socket.sendMessage(from, {
-                        text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds limit.*\n\n🔗 *Direct Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
-                    }, { quoted: msg });
-
-                    await socket.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
+                            await socket.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
+                        }
+                    }
                 }
             }
+            activeProcessing.delete(from);
         }
 
     } catch (err) {
+        activeProcessing.delete(from);
         console.error("Thenkiri Reply Listener Error:", err);
     }
 });
