@@ -2,8 +2,6 @@ const { cmd } = require('../command')
 const axios = require('axios')
 const yts = require('yt-search')
 
-const videoRequests = new Map()
-
 function extractYouTubeId(url) {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/
     const match = url.match(regExp)
@@ -13,7 +11,7 @@ function extractYouTubeId(url) {
 cmd({
     pattern: "video",
     alias: ["ytv", "ytmp4"],
-    desc: "Download YouTube Videos with Quality",
+    desc: "Download YouTube Videos",
     category: "download",
     filename: __filename
 },
@@ -37,53 +35,43 @@ async (conn, mek, m, { from, q, reply }) => {
             videoTitle = data.title
         }
 
-        // Cobalt API (Cloudflare / YouTube Bot Protection Bypass කරන ප්‍රධාන API එක)
-        let videoData = null
-        try {
-            const res = await axios.post('https://api.cobalt.tools/api/json', {
-                url: videoUrl,
-                videoQuality: "720"
-            }, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                timeout: 10000
-            })
+        let downloadUrl = null
+        let title = videoTitle
 
-            if (res.data && res.data.url) {
-                videoData = {
-                    url: res.data.url,
-                    title: videoTitle || "YouTube Video"
-                }
-            }
-        } catch (e) {
-            console.log("Cobalt API Failed, trying scraper...")
-        }
+        // Working Endpoints
+        const apis = [
+            `https://api.darksadasyt.mobi/site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
+            `https://api.giftedtech.my.id/api/download/dl-ytmp4?url=${encodeURIComponent(videoUrl)}`,
+            `https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(videoUrl)}`
+        ]
 
-        // Backup Scraper API (Cobalt එක Fail වුවහොත්)
-        if (!videoData) {
+        for (const api of apis) {
             try {
-                const res = await axios.get(`https://api.vreden.my.id/api/ytmp4?url=${encodeURIComponent(videoUrl)}`)
-                if (res.data && res.data.result && res.data.result.download) {
-                    videoData = {
-                        url: res.data.result.download.url,
-                        title: res.data.result.title || videoTitle
+                const res = await axios.get(api, { timeout: 15000 })
+                if (res.data) {
+                    if (res.data.result && (res.data.result.files || res.data.result.download_url || res.data.result.url || res.data.result.dl_url)) {
+                        downloadUrl = res.data.result.files || res.data.result.download_url || res.data.result.url || res.data.result.dl_url
+                        title = res.data.result.title || title
+                        break
+                    } else if (res.data.data && res.data.data.dl) {
+                        downloadUrl = res.data.data.dl
+                        title = res.data.data.title || title
+                        break
                     }
                 }
             } catch (err) {
-                console.log("Backup API Failed")
+                console.log(`Endpoint Failed: ${api}`)
             }
         }
 
-        if (!videoData) {
-            return reply('❌ YouTube Bot Block එක නිසා වීඩියෝ එක ලබාගත නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
+        if (!downloadUrl) {
+            return reply('❌ Download Link එක සකස් කිරීමට නොහැකි විය. කරුණාකර වෙනත් වීඩියෝවක් හෝ මොහොතකින් නැවත උත්සාහ කරන්න.')
         }
 
-        let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${videoData.title}`
+        let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${title || 'YouTube Video'}`
 
         await conn.sendMessage(from, { 
-            video: { url: videoData.url }, 
+            video: { url: downloadUrl }, 
             caption: caption 
         }, { quoted: mek })
 
