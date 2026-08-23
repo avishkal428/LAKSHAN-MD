@@ -2,10 +2,17 @@ const { cmd } = require('../command')
 const axios = require('axios')
 const yts = require('yt-search')
 
+// YouTube Link එකෙන් Video ID එක පමණක් වෙන් කරගන්නා Function එක
+function extractYouTubeId(url) {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/
+    const match = url.match(regExp)
+    return (match && match[2].length === 11) ? match[2] : null
+}
+
 cmd({
     pattern: "video",
     alias: ["ytv", "ytmp4"],
-    desc: "Download YouTube Videos",
+    desc: "Download YouTube Videos & Shorts",
     category: "download",
     filename: __filename
 },
@@ -18,13 +25,14 @@ async (conn, mek, m, { from, q, reply }) => {
         let videoUrl = q
         let videoTitle = ''
 
-        // Shorts Link එක Watch Link එකකට Convert කිරීම
-        if (videoUrl.includes('youtube.com/shorts/')) {
-            videoUrl = videoUrl.replace('youtube.com/shorts/', 'youtube.com/watch?v=')
-        }
-
-        // Link එකක් නොවේ නම් yts මඟින් Search කිරීම
-        if (!q.startsWith('http://') && !q.startsWith('https://')) {
+        // Link එකක් නම් Extra Parameters අයින් කර Clean URL එකක් හදා ගැනීම
+        if (q.startsWith('http://') || q.startsWith('https://')) {
+            const videoId = extractYouTubeId(q)
+            if (videoId) {
+                videoUrl = `https://www.youtube.com/watch?v=${videoId}`
+            }
+        } else {
+            // Text Search එකක් නම්
             const search = await yts(q)
             const data = search.videos[0]
             if (!data) return reply('❌ වීඩියෝ එක සොයා ගැනීමට නොහැකි විය.')
@@ -32,11 +40,11 @@ async (conn, mek, m, { from, q, reply }) => {
             videoTitle = data.title
         }
 
-        // API List (එකක් Fail වුවහොත් ඊළඟ එකට Auto යයි)
+        // Working APIs List
         const apiEndpoints = [
-            `https://api.dark-yasiya.site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
+            `https://www.ominisave.store/api/ytmp4?url=${encodeURIComponent(videoUrl)}`,
             `https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-            `https://www.ominisave.store/api/ytmp4?url=${encodeURIComponent(videoUrl)}`
+            `https://api.dark-yasiya.site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`
         ]
 
         let downloadUrl = null
@@ -44,11 +52,11 @@ async (conn, mek, m, { from, q, reply }) => {
 
         for (const url of apiEndpoints) {
             try {
-                const res = await axios.get(url, { timeout: 10000 })
+                const res = await axios.get(url, { timeout: 12000 })
                 if (res.data) {
-                    // Dark Yasiya API
-                    if (res.data.result && res.data.result.og_link) {
-                        downloadUrl = res.data.result.og_link
+                    // Ominisave API
+                    if (res.data.status && res.data.result && (res.data.result.downloadLink || res.data.result.url)) {
+                        downloadUrl = res.data.result.downloadLink || res.data.result.url
                         title = res.data.result.title || title
                         break
                     }
@@ -58,20 +66,20 @@ async (conn, mek, m, { from, q, reply }) => {
                         title = res.data.result.title || title
                         break
                     }
-                    // Ominisave API
-                    else if (res.data.status && res.data.result && (res.data.result.downloadLink || res.data.result.url)) {
-                        downloadUrl = res.data.result.downloadLink || res.data.result.url
+                    // Dark Yasiya API
+                    else if (res.data.result && res.data.result.og_link) {
+                        downloadUrl = res.data.result.og_link
                         title = res.data.result.title || title
                         break
                     }
                 }
             } catch (err) {
-                console.log(`API Failed: ${url}`)
+                console.log(`API Fetch Failed for endpoint: ${url}`)
             }
         }
 
         if (!downloadUrl) {
-            return reply('❌ දැනට පවතින සියලුම Downloader APIs අක්‍රියයි. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
+            return reply('❌ වීඩියෝ එක Download කිරීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
         }
 
         let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${title || 'YouTube Video'}`
