@@ -1,11 +1,9 @@
 const { cmd } = require('../command')
-const ytdl = require('@distube/ytdl-core')
+const axios = require('axios')
 const yts = require('yt-search')
 
-// Active Quality Request තබා ගැනීමට Map එකක්
 const videoRequests = new Map()
 
-// YouTube Link එකෙන් ID වෙන් කරගැනීම
 function extractYouTubeId(url) {
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/
     const match = url.match(regExp)
@@ -23,7 +21,7 @@ async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply('🎬 කරුණාකර Video / Shorts Link එකක් හෝ නමක් ලබාදෙන්න!')
 
-        await reply('🔍 *Fetching Quality Options...*')
+        await reply('🔍 *Fetching Video Data...*')
 
         let videoUrl = q
         let videoTitle = ''
@@ -39,70 +37,58 @@ async (conn, mek, m, { from, q, reply }) => {
             videoTitle = data.title
         }
 
-        // YouTube Video Info ලබා ගැනීම
-        const info = await ytdl.getInfo(videoUrl)
-        const formats = ytdl.filterFormats(info.formats, 'videoandaudio')
+        // Cobalt API (Cloudflare / YouTube Bot Protection Bypass කරන ප්‍රධාන API එක)
+        let videoData = null
+        try {
+            const res = await axios.post('https://api.cobalt.tools/api/json', {
+                url: videoUrl,
+                videoQuality: "720"
+            }, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000
+            })
 
-        if (!formats || formats.length === 0) {
-            return reply('❌ Download කළ හැකි Quality Options සොයා ගැනීමට නොහැකි විය.')
+            if (res.data && res.data.url) {
+                videoData = {
+                    url: res.data.url,
+                    title: videoTitle || "YouTube Video"
+                }
+            }
+        } catch (e) {
+            console.log("Cobalt API Failed, trying scraper...")
         }
 
-        // Available Qualities වෙන් කර ගැනීම
-        let qualityMap = new Map()
-        let menuText = `🎬 *YOUTUBE VIDEO DOWNLOADER* 🎬\n\n`
-        menuText += `📝 *Title:* ${info.videoDetails.title}\n`
-        menuText += `⏱️ *Duration:* ${info.videoDetails.lengthSeconds}s\n\n`
-        menuText += `*කරුණාකර ඔබට අවශ්‍ය Quality එකේ අංකය Reply කරන්න:* \n\n`
-
-        let index = 1
-        formats.forEach(f => {
-            if (f.qualityLabel && !qualityMap.has(f.qualityLabel)) {
-                qualityMap.set(index.toString(), {
-                    quality: f.qualityLabel,
-                    url: f.url
-                })
-                menuText += `*${index}* - ${f.qualityLabel}\n`
-                index++
+        // Backup Scraper API (Cobalt එක Fail වුවහොත්)
+        if (!videoData) {
+            try {
+                const res = await axios.get(`https://api.vreden.my.id/api/ytmp4?url=${encodeURIComponent(videoUrl)}`)
+                if (res.data && res.data.result && res.data.result.download) {
+                    videoData = {
+                        url: res.data.result.download.url,
+                        title: res.data.result.title || videoTitle
+                    }
+                }
+            } catch (err) {
+                console.log("Backup API Failed")
             }
-        })
+        }
 
-        const sentMsg = await conn.sendMessage(from, { text: menuText }, { quoted: mek })
+        if (!videoData) {
+            return reply('❌ YouTube Bot Block එක නිසා වීඩියෝ එක ලබාගත නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
+        }
 
-        // Data එක Save කිරීම
-        videoRequests.set(from, {
-            options: qualityMap,
-            title: info.videoDetails.title,
-            messageId: sentMsg.key.id
-        })
+        let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${videoData.title}`
+
+        await conn.sendMessage(from, { 
+            video: { url: videoData.url }, 
+            caption: caption 
+        }, { quoted: mek })
 
     } catch (e) {
         console.error(e)
         reply(`❌ Error: ${e.message}`)
-    }
-})
-
-// User Reply එක Catch කර Video එක Send කිරීම
-cmd({
-    on: "text"
-},
-async (conn, mek, m, { from, body, reply }) => {
-    if (videoRequests.has(from)) {
-        const reqData = videoRequests.get(from)
-        const choice = body.trim()
-
-        if (reqData.options.has(choice)) {
-            const selected = reqData.options.get(choice)
-
-            await reply(`⬇️ *Downloading ${selected.quality} Video...*`)
-
-            let caption = `🎬 *${reqData.title}*\n📊 *Quality:* ${selected.quality}`
-
-            await conn.sendMessage(from, { 
-                video: { url: selected.url }, 
-                caption: caption 
-            }, { quoted: mek })
-
-            videoRequests.delete(from) // Request එක ඉවත් කිරීම
-        }
     }
 })
