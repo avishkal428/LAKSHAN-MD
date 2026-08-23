@@ -13,6 +13,7 @@ const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷�
 // Global Active Sessions Maps
 if (!global.menuSessions) global.menuSessions = new Map();
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
+if (!global.animeSessions) global.animeSessions = new Map();
 
 function formatRAMUsage() {
     const used = process.memoryUsage().heapUsed / 1024 / 1024;
@@ -70,6 +71,7 @@ async (conn, mek, m, { from, pushname = 'User', sender }) => {
             { title: 'Search',   name: 'search',   emoji: '🔎' },
             { title: 'Convert',  name: 'convert',  emoji: '🔄' },
             { title: 'Movie',    name: 'movie',    emoji: '🎥' },
+            { title: 'Anime',    name: 'anime',    emoji: '⛩️' },
             { title: 'Utility',  name: 'utility',  emoji: '🛠️' },
             { title: 'Tools',    name: 'tools',    emoji: '⚙️' }
         ];
@@ -101,7 +103,8 @@ ${categories.map((cat, i) => `┃ ${i + 1} ${cat.emoji} ${cat.title}`).join('\n'
         global.menuSessions.set(from, {
             msgId: sentMsg.key.id,
             sender,
-            categories
+            categories,
+            timestamp: Date.now()
         });
 
     } catch (e) {
@@ -111,7 +114,7 @@ ${categories.map((cat, i) => `┃ ${i + 1} ${cat.emoji} ${cat.title}`).join('\n'
 });
 
 // ==========================================
-// 2. GLOBAL REPLY LISTENER (MENU + MOVIES)
+// 2. GLOBAL REPLY LISTENER (MENU + MOVIES + ANIME)
 // ==========================================
 cmd({
     on: "body"
@@ -124,6 +127,147 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
         const choiceNum = parseInt(textMsg);
         const choiceIndex = choiceNum - 1;
+
+        // --- HANDLE ANIME REPLIES ---
+        if (global.animeSessions.has(from)) {
+            const session = global.animeSessions.get(from);
+
+            if (Date.now() - session.timestamp > 300000) {
+                global.animeSessions.delete(from);
+                return;
+            }
+
+            if (session.step === 'SELECTION') {
+                const animeResults = session.results;
+                if (choiceIndex < 0 || choiceIndex >= animeResults.length) return;
+
+                const selectedAnime = animeResults[choiceIndex];
+                const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Anime Episodes...*` }, { quoted: mek });
+
+                const episodes = await scraperAnime.getEpisodes(selectedAnime.link);
+
+                if (!episodes || episodes.length === 0) {
+                    await conn.sendMessage(from, { text: `❌ No episodes found for this anime.` }, { quoted: mek });
+                    global.animeSessions.delete(from);
+                    return;
+                }
+
+                let captionText = `⛩️ *${selectedAnime.title}* ⛩️\n\n`;
+                captionText += `📥 *Select Episode to Download:*\n\n`;
+                captionText += `*0.* 📦 *ALL EPISODES (AUTO DOWNLOAD ALL)*\n\n`;
+
+                episodes.forEach((ep, idx) => {
+                    const epName = ep.title || ep.name || `Episode ${idx + 1}`;
+                    captionText += `*${idx + 1}.* ${epName}\n`;
+                });
+
+                captionText += `\n> ${FOOTER}`;
+
+                await conn.sendMessage(from, { text: "✅ *Episodes Fetched!*", edit: statusMsg.key });
+
+                await conn.sendMessage(from, {
+                    image: { url: selectedAnime.img || 'https://files.catbox.moe/uqofdi.jpg' },
+                    caption: captionText
+                }, { quoted: mek });
+
+                global.animeSessions.set(from, {
+                    step: 'DOWNLOAD',
+                    episodes: episodes,
+                    animeTitle: selectedAnime.title,
+                    timestamp: Date.now()
+                });
+                return;
+            }
+
+            else if (session.step === 'DOWNLOAD') {
+                const episodes = session.episodes;
+
+                if (choiceNum === 0) {
+                    await conn.sendMessage(from, { text: `📦 *Downloading ALL (${episodes.length}) Anime Episodes... Please wait!*` }, { quoted: mek });
+
+                    for (let i = 0; i < episodes.length; i++) {
+                        const ep = episodes[i];
+                        const epName = ep.title || ep.name || `Episode ${i + 1}`;
+                        const dlLink = await scraperAnime.getDownloadLink(ep.link);
+
+                        if (dlLink) {
+                            const safeFileName = `${session.animeTitle.replace(/[/\\?%*:|"<>]/g, "")}_${epName.replace(/\s+/g, '_')}.mp4`;
+
+                            try {
+                                await conn.sendMessage(from, {
+                                    document: { url: dlLink },
+                                    mimetype: 'video/mp4',
+                                    fileName: safeFileName,
+                                    caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
+                                }, { quoted: mek });
+                            } catch (err1) {
+                                try {
+                                    const resBuffer = await axios.get(dlLink, { responseType: 'arraybuffer', timeout: 60000 });
+                                    await conn.sendMessage(from, {
+                                        document: Buffer.from(resBuffer.data),
+                                        mimetype: 'video/mp4',
+                                        fileName: safeFileName,
+                                        caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
+                                    }, { quoted: mek });
+                                } catch (err2) {
+                                    await conn.sendMessage(from, {
+                                        text: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
+                                    }, { quoted: mek });
+                                }
+                            }
+                        }
+                        if (sleep) await sleep(3000);
+                    }
+                    return;
+                }
+
+                if (choiceIndex < 0 || choiceIndex >= episodes.length) return;
+
+                const selectedEp = episodes[choiceIndex];
+                const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading Anime Episode...*` }, { quoted: mek });
+
+                const dlLink = await scraperAnime.getDownloadLink(selectedEp.link);
+
+                if (!dlLink) {
+                    await conn.sendMessage(from, { text: `❌ Download link fetch failed.`, edit: dlStatusMsg.key });
+                    return;
+                }
+
+                const epName = selectedEp.title || selectedEp.name || 'Episode';
+                const safeFileName = `${session.animeTitle.replace(/[/\\?%*:|"<>]/g, "")}_${epName.replace(/\s+/g, '_')}.mp4`;
+
+                try {
+                    await conn.sendMessage(from, {
+                        document: { url: dlLink },
+                        mimetype: 'video/mp4',
+                        fileName: safeFileName,
+                        caption: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n> ${FOOTER}`
+                    }, { quoted: mek });
+
+                    await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
+
+                } catch (fileErr) {
+                    try {
+                        const resBuffer = await axios.get(dlLink, { responseType: 'arraybuffer', timeout: 60000 });
+                        await conn.sendMessage(from, {
+                            document: Buffer.from(resBuffer.data),
+                            mimetype: 'video/mp4',
+                            fileName: safeFileName,
+                            caption: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n> ${FOOTER}`
+                        }, { quoted: mek });
+
+                        await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
+                    } catch (bufferErr) {
+                        await conn.sendMessage(from, {
+                            text: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
+                        }, { quoted: mek });
+
+                        await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
+                    }
+                }
+                return;
+            }
+        }
 
         // --- HANDLE THENKIRI MOVIE/TV REPLIES ---
         if (global.thenkiriSessions.has(from)) {
@@ -257,7 +401,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
                         }
                         if (sleep) await sleep(3000);
                     }
-                    global.thenkiriSessions.delete(from);
                     return;
                 }
 
@@ -271,7 +414,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
                 if (!finalDirectLink) {
                     await conn.sendMessage(from, { text: `❌ Link bypass failed.`, edit: dlStatusMsg.key });
-                    global.thenkiriSessions.delete(from);
                     return;
                 }
 
@@ -307,8 +449,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
                         await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
                     }
                 }
-
-                global.thenkiriSessions.delete(from);
                 return;
             }
         }
@@ -342,8 +482,6 @@ ${uniqueCmds.length > 0
                 image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/uqofdi.jpg' },
                 caption: subMenu
             }, { quoted: mek });
-
-            global.menuSessions.delete(from);
         }
 
     } catch (err) {
@@ -398,7 +536,53 @@ cmd({
 });
 
 // ==========================================
-// 4. SYSTEM & OTHER COMMANDS
+// 4. ANIME COMMAND (ANIMEHEAVEN)
+// ==========================================
+cmd({
+    pattern: "anime",
+    alias: ["animesearch", "animedl"],
+    desc: "Searches anime from AnimeHeaven",
+    category: "anime",
+    filename: __filename
+}, async (socket, msg, m, { from, args }) => {
+    if (!args || args.length === 0) {
+        return socket.sendMessage(from, { text: "⚠️ Please enter an anime name!" }, { quoted: msg });
+    }
+
+    const searchQuery = args.join(' ');
+
+    try {
+        const results = await scraperAnime.searchAnime(searchQuery);
+
+        if (!results || results.length === 0) {
+            return socket.sendMessage(from, { text: `❌ No anime found for: *${searchQuery}*` }, { quoted: msg });
+        }
+
+        const animeResults = results.slice(0, 15);
+        let listText = `⛩️ *ANIME SEARCH RESULTS* ⛩️\n\n🔍 *Query:* ${searchQuery}\n\n🔽 *Reply with a number to select:*\n\n`;
+
+        animeResults.forEach((item, index) => {
+            const title = item.title || item.name || "Anime";
+            listText += `*${index + 1}.* ${title}\n`;
+        });
+
+        listText += `\n> ${FOOTER}`;
+
+        await socket.sendMessage(from, { text: listText }, { quoted: msg });
+
+        global.animeSessions.set(from, {
+            step: 'SELECTION',
+            results: animeResults,
+            timestamp: Date.now()
+        });
+
+    } catch (e) {
+        await socket.sendMessage(from, { text: `❌ Anime Search Error: ${e.message}` }, { quoted: msg });
+    }
+});
+
+// ==========================================
+// 5. SYSTEM & OTHER COMMANDS
 // ==========================================
 cmd({
     pattern: "system",
