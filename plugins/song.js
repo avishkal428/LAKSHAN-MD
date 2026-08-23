@@ -5,7 +5,7 @@ const yts = require('yt-search')
 cmd({
     pattern: "song",
     alias: ["ytmp3", "play"],
-    desc: "Download YouTube Audio",
+    desc: "Download YouTube Audio with Image",
     category: "download",
     filename: __filename
 },
@@ -17,6 +17,7 @@ async (conn, mek, m, { from, q, reply }) => {
 
         let videoUrl = q
         let videoTitle = ''
+        let videoThumb = ''
 
         // YouTube Shorts URL එකක් ආවොත් Normal Watch URL එකට මාරු කිරීම
         if (videoUrl.includes('youtube.com/shorts/')) {
@@ -30,6 +31,13 @@ async (conn, mek, m, { from, q, reply }) => {
             if (!data) return reply('❌ සින්දුව සොයා ගැනීමට නොහැකි විය.')
             videoUrl = data.url
             videoTitle = data.title
+            videoThumb = data.thumbnail
+        } else {
+            const search = await yts(videoUrl)
+            if (search && search.videos.length > 0) {
+                videoTitle = search.videos[0].title
+                videoThumb = search.videos[0].thumbnail
+            }
         }
 
         const apiUrl = `https://www.ominisave.store/api/ytmp3?url=${encodeURIComponent(videoUrl)}`
@@ -47,15 +55,24 @@ async (conn, mek, m, { from, q, reply }) => {
             return reply('❌ Download Link එක සොයා ගැනීමට නොහැකි විය.')
         }
 
+        const songTitle = audio.title || videoTitle || 'YouTube Song'
+        const coverImage = videoThumb || audio.image || 'https://i.ytimg.com/vi/default.jpg'
+
         let caption = `🎵 *YOUTUBE AUDIO DOWNLOADER* 🎵\n\n`
-        caption += `📝 *Title:* ${audio.title || videoTitle || 'YouTube Song'}\n\n`
+        caption += `📝 *Title:* ${songTitle}\n\n`
         caption += `👨‍💻 *Created By:* ${data.creator || '@SaviyaKolla'}`
 
-        // Audio Message එකක් ලෙස Send කිරීම
+        // 1. ප්‍රථමයෙන් සින්දුවේ Image එක Detail Caption එක සමඟ Send කිරීම
+        await conn.sendMessage(from, { 
+            image: { url: coverImage }, 
+            caption: caption 
+        }, { quoted: mek })
+
+        // 2. ඉන්පසුව Audio File එක Send කිරීම
         await conn.sendMessage(from, { 
             audio: { url: downloadLink }, 
             mimetype: 'audio/mp4',
-            fileName: `${audio.title || 'song'}.mp3`
+            fileName: `${songTitle}.mp3`
         }, { quoted: mek })
 
     } catch (e) {
@@ -63,4 +80,3 @@ async (conn, mek, m, { from, q, reply }) => {
         reply(`❌ Error: ${e.message}`)
     }
 })
-
