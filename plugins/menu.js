@@ -21,7 +21,7 @@ function formatRAMUsage() {
     return `${used.toFixed(2)} MB / ${total.toFixed(0)} MB`;
 }
 
-// Helper: Fetch TMDB Details for Movies & TV Series
+// Helper: Fetch TMDB Details
 async function fetchMediaDetails(cleanTitle) {
     try {
         let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
@@ -458,12 +458,24 @@ async (conn, mek, m, { from, body, isCmd }) => {
             if (choiceIndex < 0 || choiceIndex >= menuSession.categories.length) return;
 
             const selectedCat = menuSession.categories[choiceIndex];
-            
-            // මෙහිදී 'movie' හෝ 'download' යන කැටගරි දෙකේම both thenkiri සහ anime පෙන්වීම සඳහා විශේෂ පරීක්ෂාවක් යොදා ඇත.
             let filteredCmds = [];
-            if (selectedCat.name === 'movie' || selectedCat.name === 'download') {
-                filteredCmds = commands.filter(c => (c.category === 'movie' || c.category === 'download' || c.pattern === 'thenkiri' || c.pattern === 'anime') && !c.dontAddCommandList);
-            } else {
+
+            // 1. MOVIE CATEGORY -> Only show 'anime' and 'thenkiri'
+            if (selectedCat.name === 'movie') {
+                filteredCmds = commands.filter(c => c.pattern === 'anime' || c.pattern === 'thenkiri');
+            } 
+            // 2. DOWNLOAD CATEGORY -> Show normal download commands + anime & thenkiri next to each other
+            else if (selectedCat.name === 'download') {
+                const otherDlCmds = commands.filter(c => c.category === 'download' && c.pattern !== 'anime' && c.pattern !== 'thenkiri' && !c.dontAddCommandList);
+                const animeCmd = commands.find(c => c.pattern === 'anime');
+                const thenkiriCmd = commands.find(c => c.pattern === 'thenkiri');
+
+                filteredCmds = [...otherDlCmds];
+                if (animeCmd) filteredCmds.push(animeCmd);
+                if (thenkiriCmd) filteredCmds.push(thenkiriCmd);
+            } 
+            // 3. OTHER CATEGORIES
+            else {
                 filteredCmds = commands.filter(c => c.category === selectedCat.name && !c.dontAddCommandList);
             }
 
@@ -495,7 +507,7 @@ ${uniqueCmds.length > 0
 });
 
 // ==========================================
-// 3. MOVIE & TV SHOW COMMAND (THENKIRI) - Belongs to 'movie' & 'download'
+// 3. MOVIE & TV SHOW COMMAND (THENKIRI)
 // ==========================================
 cmd({
     pattern: "thenkiri",
@@ -541,13 +553,13 @@ cmd({
 });
 
 // ==========================================
-// 4. ANIME COMMAND (ANIMEHEAVEN) - Belongs to 'movie' & 'download'
+// 4. ANIME COMMAND (ANIMEHEAVEN)
 // ==========================================
 cmd({
     pattern: "anime",
     alias: ["animesearch", "animedl"],
     desc: "Searches anime from AnimeHeaven",
-    category: "movie", // මෙය movie සහ download මෙනු දෙකටම පෙන්වීම සඳහා category එක movie ලෙස හෝ download ලෙස සැකසිය හැක
+    category: "movie",
     filename: __filename
 }, async (socket, msg, m, { from, args }) => {
     if (!args || args.length === 0) {
@@ -618,7 +630,7 @@ cmd({
 });
 
 cmd({
-    pattern: `restart`,
+    pattern: "restart",
     desc: "Restarts bot",
     category: "owner",
     filename: __filename
