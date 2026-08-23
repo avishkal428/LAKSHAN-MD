@@ -49,6 +49,46 @@ async function fetchMediaDetails(rawTitle) {
     return null;
 }
 
+// Helper to Stream large files efficiently up to 2GB
+async function sendLargeDocument(socket, from, url, fileName, caption, quotedMsg) {
+    try {
+        // Stream download directly to WhatsApp Uploader without disk storage
+        const response = await axios({
+            method: 'get',
+            url: url,
+            responseType: 'stream',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
+            },
+            timeout: 0 // Infinite timeout for large files up to 2GB
+        });
+
+        await socket.sendMessage(from, {
+            document: { stream: response.data },
+            mimetype: 'video/x-matroska',
+            fileName: fileName,
+            caption: caption
+        }, { quoted: quotedMsg });
+
+        return true;
+    } catch (error) {
+        console.error("Stream Send Error, falling back to direct URL object:", error.message);
+        
+        // Fallback: Direct URL sending
+        try {
+            await socket.sendMessage(from, {
+                document: { url: url },
+                mimetype: 'video/x-matroska',
+                fileName: fileName,
+                caption: caption
+            }, { quoted: quotedMsg });
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+}
+
 // THENKIRI COMMAND
 cmd({
     pattern: "thenkiri",
@@ -215,28 +255,25 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
                     if (directLink) {
                         const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
-                        try {
+                        const caption = `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`;
+
+                        const success = await sendLargeDocument(socket, from, directLink, safeFileName, caption, msg);
+
+                        if (!success) {
                             await socket.sendMessage(from, {
-                                document: { url: directLink },
-                                mimetype: 'video/x-matroska',
-                                fileName: safeFileName,
-                                caption: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`
-                            }, { quoted: msg });
-                        } catch (e) {
-                            await socket.sendMessage(from, {
-                                text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n🔗 *Direct Link:*\n${directLink}`
+                                text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n⚠️ *File size exceeds 2GB or URL Restricted.*\n\n🔗 *Direct Download Link:*\n${directLink}`
                             }, { quoted: msg });
                         }
                     }
                 }
-                await socket.sendMessage(from, { text: `✅ *ALL (${options.length}) Files Uploaded!*` }, { quoted: msg });
+                await socket.sendMessage(from, { text: `✅ *ALL (${options.length}) Files Processed!*` }, { quoted: msg });
             } 
             // INDIVIDUAL EPISODE SELECTION
             else {
                 const choiceIndex = selectedNum - 1;
                 if (choiceIndex >= 0 && choiceIndex < options.length) {
                     const selectedOption = options[choiceIndex];
-                    const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: msg });
+                    const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading & Uploading File...*` }, { quoted: msg });
 
                     const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
 
@@ -245,20 +282,15 @@ async (socket, msg, m, { from, body, isCmd }) => {
                     } else {
                         const qName = selectedOption.quality || selectedOption.name || 'Download File';
                         const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
+                        const caption = `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`;
 
-                        try {
-                            await socket.sendMessage(from, {
-                                document: { url: finalDirectLink },
-                                mimetype: 'video/x-matroska',
-                                fileName: safeFileName,
-                                caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
-                            }, { quoted: msg });
+                        const success = await sendLargeDocument(socket, from, finalDirectLink, safeFileName, caption, msg);
 
+                        if (success) {
                             await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-
-                        } catch (fileErr) {
+                        } else {
                             await socket.sendMessage(from, {
-                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds limit.*\n\n🔗 *Direct Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds 2GB limit or direct connection blocked.*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                             }, { quoted: msg });
 
                             await socket.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
