@@ -23,7 +23,7 @@ async (conn, mek, m, { from, q, reply }) => {
         if (!q) {
             let listText = `🎨 *LOGO MAKER MENU* 🎨\n\n`
             listText += `📌 *භාවිතා කරන ආකාරය:* \n.logo <type> <text>\n\n`
-            listText += `💡 *උදාහරණ:* \n.logo cartoon Avishka\n.logo neon Lakshan\n\n`
+            listText += `💡 *උදාහරණ:* \n.logo cartoon Avishka\n.logo chrome Avis\n\n`
             listText += `✨ *ලබාගත හැකි Logo Types (${validTypes.length}):*\n`
             listText += validTypes.map(t => `• ${t}`).join('\n')
             return reply(listText)
@@ -45,37 +45,35 @@ async (conn, mek, m, { from, q, reply }) => {
 
         let logoUrl = null
 
-        // 1. Primary API (Ominisave)
-        try {
-            const apiUrl = `https://www.ominisave.store/api/logo?type=${encodeURIComponent(type)}&text=${encodeURIComponent(text)}`
-            const res = await axios.get(apiUrl, { timeout: 10000 })
-            
-            if (res.data && res.data.status) {
-                if (typeof res.data.result === 'string') {
-                    logoUrl = res.data.result
-                } else if (res.data.result && (res.data.result.url || res.data.result.download_url)) {
-                    logoUrl = res.data.result.url || res.data.result.download_url
-                }
-            }
-        } catch (err) {
-            console.log("Ominisave Logo API failed, trying fallback...")
-        }
+        // Working High-Speed Endpoints
+        const apis = [
+            `https://api.giftedtech.my.id/api/maker/ephoto-1?text=${encodeURIComponent(text)}&type=${encodeURIComponent(type)}`,
+            `https://api.siputzx.my.id/api/m/ephoto?text=${encodeURIComponent(text)}&style=${encodeURIComponent(type)}`,
+            `https://api.vreden.web.id/api/ephoto?text=${encodeURIComponent(text)}&type=${encodeURIComponent(type)}`
+        ]
 
-        // 2. Backup API (Darksadas / Ephoto Scraper)
-        if (!logoUrl) {
+        for (const api of apis) {
             try {
-                const fallbackUrl = `https://api.darksadasyt.mobi/site/ephoto?type=${encodeURIComponent(type)}&text=${encodeURIComponent(text)}`
-                const res2 = await axios.get(fallbackUrl, { timeout: 10000 })
-                if (res2.data && res2.data.result) {
-                    logoUrl = res2.data.result.url || res2.data.result
+                const res = await axios.get(api, { timeout: 12000 })
+                if (res.data) {
+                    if (res.data.result && typeof res.data.result === 'string') {
+                        logoUrl = res.data.result
+                        break
+                    } else if (res.data.result && (res.data.result.url || res.data.result.image)) {
+                        logoUrl = res.data.result.url || res.data.result.image
+                        break
+                    } else if (res.data.url) {
+                        logoUrl = res.data.url
+                        break
+                    }
                 }
-            } catch (err2) {
-                console.log("Fallback Logo API failed")
+            } catch (err) {
+                console.log(`Logo Endpoint Failed: ${api}`)
             }
         }
 
         if (!logoUrl) {
-            return reply('❌ Logo එක සදා ගැනීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
+            return reply('❌ Logo එක සදා ගැනීමට නොහැකි විය. කරුණාකර වෙනත් Style එකක් හෝ මොහොතකින් නැවත උත්සාහ කරන්න.')
         }
 
         let caption = `🎨 *LOGO CREATOR* 🎨\n\n`
