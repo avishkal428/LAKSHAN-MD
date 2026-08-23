@@ -19,7 +19,7 @@ async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply('🎬 කරුණාකර Video / Shorts Link එකක් හෝ නමක් ලබාදෙන්න!')
 
-        await reply('🔍 *Fetching Video Data...*')
+        await reply('🔍 *Downloading Video...*')
 
         let videoUrl = q
         let videoTitle = ''
@@ -35,37 +35,27 @@ async (conn, mek, m, { from, q, reply }) => {
             videoTitle = data.title
         }
 
+        // Dedicated Direct API Request
+        const res = await axios.get(`https://api.vreden.web.id/api/ytmp4?url=${encodeURIComponent(videoUrl)}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 20000
+        })
+
         let downloadUrl = null
         let title = videoTitle
 
-        // Working Endpoints
-        const apis = [
-            `https://api.darksadasyt.mobi/site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-            `https://api.giftedtech.my.id/api/download/dl-ytmp4?url=${encodeURIComponent(videoUrl)}`,
-            `https://api.siputzx.my.id/api/d/ytmp4?url=${encodeURIComponent(videoUrl)}`
-        ]
-
-        for (const api of apis) {
-            try {
-                const res = await axios.get(api, { timeout: 15000 })
-                if (res.data) {
-                    if (res.data.result && (res.data.result.files || res.data.result.download_url || res.data.result.url || res.data.result.dl_url)) {
-                        downloadUrl = res.data.result.files || res.data.result.download_url || res.data.result.url || res.data.result.dl_url
-                        title = res.data.result.title || title
-                        break
-                    } else if (res.data.data && res.data.data.dl) {
-                        downloadUrl = res.data.data.dl
-                        title = res.data.data.title || title
-                        break
-                    }
-                }
-            } catch (err) {
-                console.log(`Endpoint Failed: ${api}`)
-            }
+        if (res.data && res.data.result && res.data.result.download) {
+            downloadUrl = res.data.result.download.url
+            title = res.data.result.title || title
+        } else if (res.data && res.data.result && res.data.result.url) {
+            downloadUrl = res.data.result.url
+            title = res.data.result.title || title
         }
 
         if (!downloadUrl) {
-            return reply('❌ Download Link එක සකස් කිරීමට නොහැකි විය. කරුණාකර වෙනත් වීඩියෝවක් හෝ මොහොතකින් නැවත උත්සාහ කරන්න.')
+            return reply('❌ සර්වර් එකේ ගැටලුවක් නිසා වීඩියෝ එක ගැනීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
         }
 
         let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${title || 'YouTube Video'}`
