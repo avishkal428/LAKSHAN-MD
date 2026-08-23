@@ -6,6 +6,7 @@ const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
+if (!global.processedMsgIds) global.processedMsgIds = new Set();
 
 function cleanTitleForTMDB(rawTitle) {
     return rawTitle
@@ -84,8 +85,7 @@ cmd({
         global.thenkiriSessions.set(from, {
             step: 'SELECTION',
             results: tkResults,
-            timestamp: Date.now(),
-            isProcessing: false
+            timestamp: Date.now()
         });
 
     } catch (e) {
@@ -93,7 +93,7 @@ cmd({
     }
 });
 
-// THENKIRI REPLY LISTENER
+// THENKIRI REPLY LISTENER WITH ANTI-DUPLICATE MSG LOCK
 cmd({
     on: "body"
 },
@@ -102,11 +102,15 @@ async (socket, msg, m, { from, body, isCmd }) => {
         if (isCmd) return;
         if (!global.thenkiriSessions.has(from)) return;
 
+        // Prevent Duplicate Trigger using Message ID
+        const msgId = msg.key.id;
+        if (global.processedMsgIds.has(msgId)) return;
+        global.processedMsgIds.add(msgId);
+
+        // Keep set size small to prevent memory leak
+        if (global.processedMsgIds.size > 100) global.processedMsgIds.clear();
+
         const session = global.thenkiriSessions.get(from);
-
-        // Lock session to prevent double executions
-        if (session.isProcessing) return;
-
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
@@ -123,9 +127,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
             const tkResults = session.results;
 
             if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
-
-            // Mark session as busy
-            session.isProcessing = true;
 
             const selectedMovie = tkResults[choiceIndex];
             const statusMsg = await socket.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: msg });
@@ -190,26 +191,21 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 caption: captionText
             }, { quoted: msg });
 
-            // Update session to download state and unlock processing
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
                 options: options,
                 movieTitle: title,
-                timestamp: Date.now(),
-                isProcessing: false
+                timestamp: Date.now()
             });
         } 
 
         // STEP 2: DOWNLOAD HANDLING
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
-
-            // Lock session and then delete to prevent duplicate triggers
-            session.isProcessing = true;
+            global.thenkiriSessions.delete(from);
 
             // OPTION 0: AUTO DOWNLOAD ALL EPISODES
             if (selectedNum === 0) {
-                global.thenkiriSessions.delete(from);
                 await socket.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: msg });
 
                 for (let i = 0; i < options.length; i++) {
@@ -222,7 +218,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
                         const caption = `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`;
 
                         try {
-                            // Direct Baileys Document Stream
                             await socket.sendMessage(from, {
                                 document: { url: directLink },
                                 mimetype: 'video/x-matroska',
@@ -242,7 +237,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
             else {
                 const choiceIndex = selectedNum - 1;
                 if (choiceIndex >= 0 && choiceIndex < options.length) {
-                    global.thenkiriSessions.delete(from);
                     const selectedOption = options[choiceIndex];
                     const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading & Uploading File...*` }, { quoted: msg });
 
@@ -267,22 +261,17 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
                         } catch (fileErr) {
                             await socket.sendMessage(from, {
-                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *Direct Send Failed (URL Restricted or File > 2GB).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *Direct Send Failed (File > 2GB or Link Expired).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                             }, { quoted: msg });
 
                             await socket.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
                         }
                     }
-                } else {
-                    session.isProcessing = false;
                 }
             }
         }
 
     } catch (err) {
-        if (global.thenkiriSessions.has(from)) {
-            global.thenkiriSessions.get(from).isProcessing = false;
-        }
         console.error("Thenkiri Reply Listener Error:", err);
     }
 });
