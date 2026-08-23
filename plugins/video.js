@@ -4,8 +4,8 @@ const yts = require('yt-search')
 
 cmd({
     pattern: "video",
-    alias: ["ytv", "ytmp4", "shorts"],
-    desc: "Download YouTube Videos & Shorts",
+    alias: ["ytv", "ytmp4"],
+    desc: "Download YouTube Videos",
     category: "download",
     filename: __filename
 },
@@ -13,12 +13,12 @@ async (conn, mek, m, { from, q, reply }) => {
     try {
         if (!q) return reply('🎬 කරුණාකර Video / Shorts Link එකක් හෝ නමක් ලබාදෙන්න!')
 
-        await reply('🔍 *Downloading Video / Short...*')
+        await reply('🔍 *Fetching Video...*')
 
         let videoUrl = q
         let videoTitle = ''
 
-        // Shorts URL එක Normal URL එකකට Convert කිරීම
+        // Shorts Link එක Watch Link එකකට Convert කිරීම
         if (videoUrl.includes('youtube.com/shorts/')) {
             videoUrl = videoUrl.replace('youtube.com/shorts/', 'youtube.com/watch?v=')
         }
@@ -32,63 +32,54 @@ async (conn, mek, m, { from, q, reply }) => {
             videoTitle = data.title
         }
 
-        // 1 වන API එක (Ominisave)
-        try {
-            const apiUrl = `https://www.ominisave.store/api/ytmp4?url=${encodeURIComponent(videoUrl)}`
-            const res = await axios.get(apiUrl)
-            
-            if (res.data && res.data.status && res.data.result && (res.data.result.downloadLink || res.data.result.url)) {
-                const video = res.data.result
-                let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n`
-                caption += `📝 *Title:* ${video.title || videoTitle || 'YouTube Video'}\n\n`
-                caption += `👨‍💻 *Created By:* ${res.data.creator || '@SaviyaKolla'}`
+        // API List (එකක් Fail වුවහොත් ඊළඟ එකට Auto යයි)
+        const apiEndpoints = [
+            `https://api.dark-yasiya.site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
+            `https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
+            `https://www.ominisave.store/api/ytmp4?url=${encodeURIComponent(videoUrl)}`
+        ]
 
-                return await conn.sendMessage(from, { 
-                    video: { url: video.downloadLink || video.url }, 
-                    caption: caption 
-                }, { quoted: mek })
+        let downloadUrl = null
+        let title = videoTitle
+
+        for (const url of apiEndpoints) {
+            try {
+                const res = await axios.get(url, { timeout: 10000 })
+                if (res.data) {
+                    // Dark Yasiya API
+                    if (res.data.result && res.data.result.og_link) {
+                        downloadUrl = res.data.result.og_link
+                        title = res.data.result.title || title
+                        break
+                    }
+                    // David Cyril API
+                    else if (res.data.success && res.data.result && res.data.result.download_url) {
+                        downloadUrl = res.data.result.download_url
+                        title = res.data.result.title || title
+                        break
+                    }
+                    // Ominisave API
+                    else if (res.data.status && res.data.result && (res.data.result.downloadLink || res.data.result.url)) {
+                        downloadUrl = res.data.result.downloadLink || res.data.result.url
+                        title = res.data.result.title || title
+                        break
+                    }
+                }
+            } catch (err) {
+                console.log(`API Failed: ${url}`)
             }
-        } catch (err) {
-            console.log("Primary API failed, trying backup API 1...")
         }
 
-        // 2 වන API එක (Backup 1)
-        try {
-            const backupApiUrl = `https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`
-            const backupRes = await axios.get(backupApiUrl)
-
-            if (backupRes.data && backupRes.data.success && backupRes.data.result && backupRes.data.result.download_url) {
-                let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n`
-                caption += `📝 *Title:* ${backupRes.data.result.title || videoTitle || 'YouTube Video'}`
-
-                return await conn.sendMessage(from, { 
-                    video: { url: backupRes.data.result.download_url }, 
-                    caption: caption 
-                }, { quoted: mek })
-            }
-        } catch (err) {
-            console.log("Backup API 1 failed, trying backup API 2...")
+        if (!downloadUrl) {
+            return reply('❌ දැනට පවතින සියලුම Downloader APIs අක්‍රියයි. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.')
         }
 
-        // 3 වන API එක (Backup 2 - Shorts සඳහාම විශේෂයි)
-        try {
-            const backupApiUrl2 = `https://api.giftedtech.web.id/api/download/dlmp4?url=${encodeURIComponent(videoUrl)}`
-            const backupRes2 = await axios.get(backupApiUrl2)
+        let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n📝 *Title:* ${title || 'YouTube Video'}`
 
-            if (backupRes2.data && backupRes2.data.success && backupRes2.data.result && backupRes2.data.result.download_url) {
-                let caption = `🎬 *YOUTUBE DOWNLOADER* 🎬\n\n`
-                caption += `📝 *Title:* ${backupRes2.data.result.title || videoTitle || 'YouTube Video'}`
-
-                return await conn.sendMessage(from, { 
-                    video: { url: backupRes2.data.result.download_url }, 
-                    caption: caption 
-                }, { quoted: mek })
-            }
-        } catch (err) {
-            console.log("All APIs failed.")
-        }
-
-        return reply('❌ Shorts එක Download කිරීමට නොහැකි විය. කරුණාකර පසුව උත්සාහ කරන්න.')
+        await conn.sendMessage(from, { 
+            video: { url: downloadUrl }, 
+            caption: caption 
+        }, { quoted: mek })
 
     } catch (e) {
         console.error(e)
