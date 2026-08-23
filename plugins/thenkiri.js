@@ -6,7 +6,6 @@ const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
-const activeProcessing = new Set();
 
 function cleanTitleForTMDB(rawTitle) {
     return rawTitle
@@ -49,47 +48,7 @@ async function fetchMediaDetails(rawTitle) {
     return null;
 }
 
-// Helper to Stream large files efficiently up to 2GB
-async function sendLargeDocument(socket, from, url, fileName, caption, quotedMsg) {
-    try {
-        // Stream download directly to WhatsApp Uploader without disk storage
-        const response = await axios({
-            method: 'get',
-            url: url,
-            responseType: 'stream',
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
-            },
-            timeout: 0 // Infinite timeout for large files up to 2GB
-        });
-
-        await socket.sendMessage(from, {
-            document: { stream: response.data },
-            mimetype: 'video/x-matroska',
-            fileName: fileName,
-            caption: caption
-        }, { quoted: quotedMsg });
-
-        return true;
-    } catch (error) {
-        console.error("Stream Send Error, falling back to direct URL object:", error.message);
-        
-        // Fallback: Direct URL sending
-        try {
-            await socket.sendMessage(from, {
-                document: { url: url },
-                mimetype: 'video/x-matroska',
-                fileName: fileName,
-                caption: caption
-            }, { quoted: quotedMsg });
-            return true;
-        } catch (err) {
-            return false;
-        }
-    }
-}
-
-// THENKIRI COMMAND
+// THENKIRI SEARCH COMMAND
 cmd({
     pattern: "thenkiri",
     alias: ["tk", "movie", "tenkiri", "tv"],
@@ -125,7 +84,8 @@ cmd({
         global.thenkiriSessions.set(from, {
             step: 'SELECTION',
             results: tkResults,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isProcessing: false
         });
 
     } catch (e) {
@@ -141,12 +101,15 @@ async (socket, msg, m, { from, body, isCmd }) => {
     try {
         if (isCmd) return;
         if (!global.thenkiriSessions.has(from)) return;
-        if (activeProcessing.has(from)) return;
+
+        const session = global.thenkiriSessions.get(from);
+
+        // Lock session to prevent double executions
+        if (session.isProcessing) return;
 
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
-        const session = global.thenkiriSessions.get(from);
         if (Date.now() - session.timestamp > 300000) {
             global.thenkiriSessions.delete(from);
             return;
@@ -161,7 +124,8 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
 
-            activeProcessing.add(from);
+            // Mark session as busy
+            session.isProcessing = true;
 
             const selectedMovie = tkResults[choiceIndex];
             const statusMsg = await socket.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: msg });
@@ -171,7 +135,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
             if (!options || options.length === 0) {
                 await socket.sendMessage(from, { text: `❌ No download links found.` }, { quoted: msg });
                 global.thenkiriSessions.delete(from);
-                activeProcessing.delete(from);
                 return;
             }
 
@@ -227,25 +190,26 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 caption: captionText
             }, { quoted: msg });
 
+            // Update session to download state and unlock processing
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
                 options: options,
                 movieTitle: title,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                isProcessing: false
             });
-
-            activeProcessing.delete(from);
         } 
 
         // STEP 2: DOWNLOAD HANDLING
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
 
-            global.thenkiriSessions.delete(from);
-            activeProcessing.add(from);
+            // Lock session and then delete to prevent duplicate triggers
+            session.isProcessing = true;
 
             // OPTION 0: AUTO DOWNLOAD ALL EPISODES
             if (selectedNum === 0) {
+                global.thenkiriSessions.delete(from);
                 await socket.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: msg });
 
                 for (let i = 0; i < options.length; i++) {
@@ -257,11 +221,17 @@ async (socket, msg, m, { from, body, isCmd }) => {
                         const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
                         const caption = `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`;
 
-                        const success = await sendLargeDocument(socket, from, directLink, safeFileName, caption, msg);
-
-                        if (!success) {
+                        try {
+                            // Direct Baileys Document Stream
                             await socket.sendMessage(from, {
-                                text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n⚠️ *File size exceeds 2GB or URL Restricted.*\n\n🔗 *Direct Download Link:*\n${directLink}`
+                                document: { url: directLink },
+                                mimetype: 'video/x-matroska',
+                                fileName: safeFileName,
+                                caption: caption
+                            }, { quoted: msg });
+                        } catch (e) {
+                            await socket.sendMessage(from, {
+                                text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n⚠️ *Direct Send Failed.*\n\n🔗 *Direct Download Link:*\n${directLink}`
                             }, { quoted: msg });
                         }
                     }
@@ -272,6 +242,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
             else {
                 const choiceIndex = selectedNum - 1;
                 if (choiceIndex >= 0 && choiceIndex < options.length) {
+                    global.thenkiriSessions.delete(from);
                     const selectedOption = options[choiceIndex];
                     const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading & Uploading File...*` }, { quoted: msg });
 
@@ -284,25 +255,34 @@ async (socket, msg, m, { from, body, isCmd }) => {
                         const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
                         const caption = `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`;
 
-                        const success = await sendLargeDocument(socket, from, finalDirectLink, safeFileName, caption, msg);
-
-                        if (success) {
-                            await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-                        } else {
+                        try {
                             await socket.sendMessage(from, {
-                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds 2GB limit or direct connection blocked.*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                                document: { url: finalDirectLink },
+                                mimetype: 'video/x-matroska',
+                                fileName: safeFileName,
+                                caption: caption
+                            }, { quoted: msg });
+
+                            await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
+
+                        } catch (fileErr) {
+                            await socket.sendMessage(from, {
+                                text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *Direct Send Failed (URL Restricted or File > 2GB).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                             }, { quoted: msg });
 
                             await socket.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
                         }
                     }
+                } else {
+                    session.isProcessing = false;
                 }
             }
-            activeProcessing.delete(from);
         }
 
     } catch (err) {
-        activeProcessing.delete(from);
+        if (global.thenkiriSessions.has(from)) {
+            global.thenkiriSessions.get(from).isProcessing = false;
+        }
         console.error("Thenkiri Reply Listener Error:", err);
     }
 });
