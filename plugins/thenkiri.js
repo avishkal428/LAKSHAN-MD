@@ -7,25 +7,23 @@ const FOOTER = "ᴀᴠɪꜱʜᴋᴀ ヤ";
 
 const thenkiriSessions = new Map();
 
-// Helper Function: Movie/TV Details via TMDB
+// Helper: Fetch TMDB Data for Movies and TV Shows
 async function fetchMediaDetails(cleanTitle) {
     try {
-        // First Try: Search Movie
         let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
         let searchRes = await axios.get(searchUrl);
 
-        if (searchRes.data?.results?.[0]) {
+        if (searchRes.data && searchRes.data.results && searchRes.data.results.length > 0) {
             const movieId = searchRes.data.results[0].id;
             const detailUrl = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
             const detailRes = await axios.get(detailUrl);
             return { type: 'movie', data: detailRes.data };
         }
 
-        // Second Try: Search TV Series
         searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
         searchRes = await axios.get(searchUrl);
 
-        if (searchRes.data?.results?.[0]) {
+        if (searchRes.data && searchRes.data.results && searchRes.data.results.length > 0) {
             const tvId = searchRes.data.results[0].id;
             const detailUrl = `https://api.themoviedb.org/3/tv/${tvId}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
             const detailRes = await axios.get(detailUrl);
@@ -37,20 +35,20 @@ async function fetchMediaDetails(cleanTitle) {
     return null;
 }
 
-// 1️⃣ SEARCH COMMAND
+// 1. MAIN COMMAND
 cmd({
     pattern: "tenkiri",
     alias: ["tk", "thenkiri"],
-    desc: "Search and download movies & TV series from Thenkiri",
+    desc: "Search and download movies & TV series",
     category: "download",
     react: "🍿",
 },
 async (socket, msg, m, { from, args }) => {
     const chatJid = from;
 
-    if (!args.length) {
+    if (!args || args.length === 0) {
         await socket.sendMessage(chatJid, {
-            text: `🍿 *THENKIRI DOWNLOADER* 🍿\n\n⚠️ *Please provide a movie or TV show name!*\n\nExample: .tenkiri loki\n\n> ${FOOTER}`
+            text: `🍿 *THENKIRI DOWNLOADER* 🍿\n\n⚠️ *Please provide a movie or TV show name!*\n\nExample: .tenkiri deadpool\n\n> ${FOOTER}`
         }, { quoted: msg });
         return;
     }
@@ -93,7 +91,7 @@ async (socket, msg, m, { from, args }) => {
     }
 });
 
-// 2️⃣ AUTO REPLY LISTENER
+// 2. AUTO REPLY LISTENER
 cmd({
     on: "body"
 },
@@ -105,6 +103,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
         const session = thenkiriSessions.get(chatJid);
 
         if (!session) return;
+
         if (Date.now() - session.timestamp > 300000) {
             thenkiriSessions.delete(chatJid);
             return;
@@ -117,9 +116,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
         const choiceIndex = parseInt(textMsg) - 1;
 
-        // ----------------------------------------------------
-        // STEP 1: ITEM SELECTION & DETAILS
-        // ----------------------------------------------------
         if (session.step === 'SELECTION') {
             const tkResults = session.results;
 
@@ -154,16 +150,18 @@ async (socket, msg, m, { from, body, isCmd }) => {
             const rating = tmdbData?.vote_average ? `${tmdbData.vote_average.toFixed(1)} / 10` : 'N/A';
             const language = tmdbData?.original_language ? tmdbData.original_language.toUpperCase() : 'English';
             const genres = tmdbData?.genres ? tmdbData.genres.map(g => g.name).join(', ') : 'Action, Drama';
-            
-            const cast = tmdbData?.credits?.cast 
-                ? tmdbData.credits.cast.slice(0, 3).map(c => `• ${c.name} as ${c.character}`).join('\n') 
+
+            const cast = (tmdbData && tmdbData.credits && tmdbData.credits.cast)
+                ? tmdbData.credits.cast.slice(0, 3).map(c => `• ${c.name} as ${c.character}`).join('\n')
                 : '• N/A';
 
             const plot = tmdbData?.overview || 'No plot available.';
-            const trailerObj = tmdbData?.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+            const trailerObj = (tmdbData && tmdbData.videos && tmdbData.videos.results) 
+                ? tmdbData.videos.results.find(v => v.type === 'Trailer' && v.site === 'YouTube') 
+                : null;
             const trailerLink = trailerObj ? `https://youtu.be/${trailerObj.key}` : 'N/A';
 
-            const posterImg = tmdbData?.poster_path 
+            const posterImg = tmdbData?.poster_path
                 ? `https://image.tmdb.org/t/p/w780${tmdbData.poster_path}`
                 : (selectedMovie.img || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500");
 
@@ -202,10 +200,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 timestamp: Date.now()
             });
         }
-
-        // ----------------------------------------------------
-        // STEP 2: QUALITY / EPISODE SELECTION & SEND FILE
-        // ----------------------------------------------------
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
 
@@ -242,7 +236,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 });
 
             } catch (fileErr) {
-                console.error("Upload Limit Exceeded (2GB+):", fileErr.message);
+                console.error("Upload Limit Exceeded:", fileErr.message);
 
                 await socket.sendMessage(chatJid, {
                     text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds WhatsApp limit (2GB+).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
