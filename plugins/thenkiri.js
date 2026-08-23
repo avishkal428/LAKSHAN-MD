@@ -7,11 +7,41 @@ const FOOTER = "ᴀᴠɪꜱʜᴋᴀ ヤ";
 
 const thenkiriSessions = new Map();
 
-// 1. COMMAND: Search Movies
+// Helper Function: Movie/TV Details via TMDB
+async function fetchMediaDetails(cleanTitle) {
+    try {
+        // First Try: Search Movie
+        let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
+        let searchRes = await axios.get(searchUrl);
+
+        if (searchRes.data?.results?.[0]) {
+            const movieId = searchRes.data.results[0].id;
+            const detailUrl = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
+            const detailRes = await axios.get(detailUrl);
+            return { type: 'movie', data: detailRes.data };
+        }
+
+        // Second Try: Search TV Series
+        searchUrl = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
+        searchRes = await axios.get(searchUrl);
+
+        if (searchRes.data?.results?.[0]) {
+            const tvId = searchRes.data.results[0].id;
+            const detailUrl = `https://api.themoviedb.org/3/tv/${tvId}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
+            const detailRes = await axios.get(detailUrl);
+            return { type: 'tv', data: detailRes.data };
+        }
+    } catch (e) {
+        console.error("TMDB Fetch Error:", e.message);
+    }
+    return null;
+}
+
+// 1️⃣ SEARCH COMMAND
 cmd({
     pattern: "tenkiri",
     alias: ["tk", "thenkiri"],
-    desc: "Search and download movies from Thenkiri",
+    desc: "Search and download movies & TV series from Thenkiri",
     category: "download",
     react: "🍿",
 },
@@ -20,7 +50,7 @@ async (socket, msg, m, { from, args }) => {
 
     if (!args.length) {
         await socket.sendMessage(chatJid, {
-            text: `🍿 *THENKIRI MOVIE DOWNLOADER* 🍿\n\n⚠️ *Please provide a movie name!*\n\nExample: .tenkiri deadpool\n\n> ${FOOTER}`
+            text: `🍿 *THENKIRI DOWNLOADER* 🍿\n\n⚠️ *Please provide a movie or TV show name!*\n\nExample: .tenkiri loki\n\n> ${FOOTER}`
         }, { quoted: msg });
         return;
     }
@@ -32,16 +62,16 @@ async (socket, msg, m, { from, args }) => {
 
         if (!searchResults || searchResults.length === 0) {
             await socket.sendMessage(chatJid, {
-                text: `🍿 *THENKIRI MOVIE DOWNLOADER* 🍿\n\n🔍 *Search Query:* ${searchQuery}\n\n❌ No movies found!\n\n> ${FOOTER}`
+                text: `🍿 *THENKIRI DOWNLOADER* 🍿\n\n🔍 *Search Query:* ${searchQuery}\n\n❌ No items found!\n\n> ${FOOTER}`
             }, { quoted: msg });
             return;
         }
 
         const tkResults = searchResults.slice(0, 15);
-        let listText = `🍿 *THENKIRI MOVIE DOWNLOADER* 🍿\n\n🔍 *Search Query:* ${searchQuery}\n\n🔽 *Reply with a number to select a movie:*\n\n`;
+        let listText = `🍿 *THENKIRI DOWNLOADER* 🍿\n\n🔍 *Search Query:* ${searchQuery}\n\n🔽 *Reply with a number to select:*\n\n`;
 
         tkResults.forEach((item, index) => {
-            const title = item.title || item.name || "Movie";
+            const title = item.title || item.name || "Item";
             listText += `*${index + 1}.* ${title}\n`;
         });
 
@@ -63,7 +93,7 @@ async (socket, msg, m, { from, args }) => {
     }
 });
 
-// 2. REPLY LISTENER (Auto Handle Reply Numbers)
+// 2️⃣ AUTO REPLY LISTENER
 cmd({
     on: "body"
 },
@@ -87,7 +117,9 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
         const choiceIndex = parseInt(textMsg) - 1;
 
-        // STEP 1: MOVIE SELECTION
+        // ----------------------------------------------------
+        // STEP 1: ITEM SELECTION & DETAILS
+        // ----------------------------------------------------
         if (session.step === 'SELECTION') {
             const tkResults = session.results;
 
@@ -99,39 +131,29 @@ async (socket, msg, m, { from, body, isCmd }) => {
             const options = await scraper.getDownloadOptions(selectedMovie.link);
 
             if (!options || options.length === 0) {
-                await socket.sendMessage(chatJid, { text: `❌ No download links found for this movie.` }, { quoted: msg });
+                await socket.sendMessage(chatJid, { text: `❌ No download links found.` }, { quoted: msg });
                 thenkiriSessions.delete(chatJid);
                 return;
             }
 
-            let tmdbData = null;
             let cleanTitle = selectedMovie.title
                 .split('|')[0]
                 .replace(/\(\d{4}\)/g, '')
-                .replace(/download|movie|sinhala|sub/gi, '')
+                .replace(/season\s*\d+/gi, '')
+                .replace(/s\d+/gi, '')
+                .replace(/download|movie|tv|show|sinhala|sub/gi, '')
                 .trim();
 
-            try {
-                const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
-                const searchRes = await axios.get(searchUrl);
+            const tmdbRes = await fetchMediaDetails(cleanTitle);
+            const tmdbData = tmdbRes ? tmdbRes.data : null;
+            const isTv = tmdbRes ? tmdbRes.type === 'tv' : false;
 
-                if (searchRes.data?.results?.[0]) {
-                    const movieId = searchRes.data.results[0].id;
-                    const detailUrl = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
-                    const detailRes = await axios.get(detailUrl);
-                    tmdbData = detailRes.data;
-                }
-            } catch (e) {
-                console.error("TMDB Fetch Error:", e.message);
-            }
-
-            const title = tmdbData?.title || cleanTitle;
-            const year = tmdbData?.release_date ? tmdbData.release_date.split('-')[0] : '';
+            const title = (isTv ? tmdbData?.name : tmdbData?.title) || cleanTitle;
+            const releaseDate = (isTv ? tmdbData?.first_air_date : tmdbData?.release_date) || 'N/A';
+            const year = releaseDate !== 'N/A' ? releaseDate.split('-')[0] : '';
             const rating = tmdbData?.vote_average ? `${tmdbData.vote_average.toFixed(1)} / 10` : 'N/A';
-            const runtime = tmdbData?.runtime ? `${Math.floor(tmdbData.runtime / 60)}h ${tmdbData.runtime % 60}m` : 'N/A';
-            const releaseDate = tmdbData?.release_date || 'N/A';
             const language = tmdbData?.original_language ? tmdbData.original_language.toUpperCase() : 'English';
-            const genres = tmdbData?.genres ? tmdbData.genres.map(g => g.name).join(', ') : 'Action, Adventure';
+            const genres = tmdbData?.genres ? tmdbData.genres.map(g => g.name).join(', ') : 'Action, Drama';
             
             const cast = tmdbData?.credits?.cast 
                 ? tmdbData.credits.cast.slice(0, 3).map(c => `• ${c.name} as ${c.character}`).join('\n') 
@@ -147,7 +169,6 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             let captionText = `🎬 *${title}* ${year ? `(${year})` : ''}\n\n`;
             captionText += `⭐ *Rating:* ${rating}\n`;
-            captionText += `⌛ *Runtime:* ${runtime}\n`;
             captionText += `📅 *Release Date:* ${releaseDate}\n`;
             captionText += `🌐 *Language:* ${language}\n\n`;
             captionText += `🎭 *Genres:* ${genres}\n\n`;
@@ -155,10 +176,10 @@ async (socket, msg, m, { from, body, isCmd }) => {
             captionText += `📖 *Plot:* ${plot}\n\n`;
             captionText += `🎬 *Trailer:* ${trailerLink}\n`;
             captionText += `----------------------------------------\n\n`;
-            captionText += `📥 *Select Download Quality:*\n\n`;
+            captionText += `📥 *Select Download Quality / Episode:*\n\n`;
 
             options.forEach((opt, idx) => {
-                const qName = opt.quality || opt.name || 'Download Movie';
+                const qName = opt.quality || opt.name || 'Download File';
                 captionText += `*${idx + 1}.* ${qName}\n`;
             });
 
@@ -182,27 +203,29 @@ async (socket, msg, m, { from, body, isCmd }) => {
             });
         }
 
-        // STEP 2: QUALITY SELECTION & SEND FILE
+        // ----------------------------------------------------
+        // STEP 2: QUALITY / EPISODE SELECTION & SEND FILE
+        // ----------------------------------------------------
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
 
             if (choiceIndex < 0 || choiceIndex >= options.length) return;
 
             const selectedOption = options[choiceIndex];
-            const dlStatusMsg = await socket.sendMessage(chatJid, { text: `⚡ *Downloading Movie File...*` }, { quoted: msg });
+            const dlStatusMsg = await socket.sendMessage(chatJid, { text: `⚡ *Downloading File...*` }, { quoted: msg });
 
             const finalDirectLink = await scraper.bypassDownloadwella(selectedOption.link);
 
             if (!finalDirectLink) {
                 await socket.sendMessage(chatJid, {
-                    text: `❌ Link bypass failed.`,
+                    text: `❌ Direct download link generation failed.`,
                     edit: dlStatusMsg.key
                 });
                 thenkiriSessions.delete(chatJid);
                 return;
             }
 
-            const qName = selectedOption.quality || selectedOption.name || 'Download Movie';
+            const qName = selectedOption.quality || selectedOption.name || 'Download File';
             const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
 
             try {
@@ -210,19 +233,19 @@ async (socket, msg, m, { from, body, isCmd }) => {
                     document: { url: finalDirectLink },
                     mimetype: 'video/x-matroska',
                     fileName: safeFileName,
-                    caption: `🍿 *${session.movieTitle}*\n📌 *Quality:* ${qName}\n\n> ${FOOTER}`
+                    caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
                 }, { quoted: msg });
 
                 await socket.sendMessage(chatJid, {
-                    text: "✅ *Movie Upload Successful* ✅",
+                    text: "✅ *Upload Successful* ✅",
                     edit: dlStatusMsg.key
                 });
 
             } catch (fileErr) {
-                console.error("File upload error (2GB+ Limit):", fileErr.message);
+                console.error("Upload Limit Exceeded (2GB+):", fileErr.message);
 
                 await socket.sendMessage(chatJid, {
-                    text: `🍿 *${session.movieTitle}*\n📌 *Quality:* ${qName}\n\n⚠️ *File size exceeds WhatsApp limit (2GB+).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                    text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds WhatsApp limit (2GB+).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                 }, { quoted: msg });
 
                 await socket.sendMessage(chatJid, {
