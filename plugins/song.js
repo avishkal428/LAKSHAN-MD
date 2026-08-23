@@ -60,7 +60,7 @@ async (conn, mek, m, { from, q, reply }) => {
 
         let caption = `🎵 *YOUTUBE AUDIO DOWNLOADER* 🎵\n\n`
         caption += `📝 *Title:* ${songTitle}\n\n`
-        caption += `👨‍💻 *Created By:* ${data.creator || '@SaviyaKolla'}`
+        caption += `👨‍💻 *Created By:* ${data.creator || 'ᴀᴠɪꜱʜᴋᴀ ヤ'}`
 
         // 1. ප්‍රථමයෙන් සින්දුවේ Image එක Detail Caption එක සමඟ Send කිරීම
         await conn.sendMessage(from, { 
