@@ -71,7 +71,6 @@ async (conn, mek, m, { from, pushname = 'User', sender }) => {
             { title: 'Search',   name: 'search',   emoji: '🔎' },
             { title: 'Convert',  name: 'convert',  emoji: '🔄' },
             { title: 'Movie',    name: 'movie',    emoji: '🎥' },
-            { title: 'Anime',    name: 'anime',    emoji: '⛩️' },
             { title: 'Utility',  name: 'utility',  emoji: '🛠️' },
             { title: 'Tools',    name: 'tools',    emoji: '⚙️' }
         ];
@@ -364,7 +363,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
             else if (session.step === 'DOWNLOAD') {
                 const options = session.options;
 
-                // --- OPTION 0: DOWNLOAD ALL EPISODES ---
                 if (choiceNum === 0) {
                     await conn.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: mek });
 
@@ -404,7 +402,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
                     return;
                 }
 
-                // --- SINGLE ITEM SELECTION ---
                 if (choiceIndex < 0 || choiceIndex >= options.length) return;
 
                 const selectedOption = options[choiceIndex];
@@ -461,7 +458,15 @@ async (conn, mek, m, { from, body, isCmd }) => {
             if (choiceIndex < 0 || choiceIndex >= menuSession.categories.length) return;
 
             const selectedCat = menuSession.categories[choiceIndex];
-            const filteredCmds = commands.filter(c => c.category === selectedCat.name && !c.dontAddCommandList);
+            
+            // මෙහිදී 'movie' හෝ 'download' යන කැටගරි දෙකේම both thenkiri සහ anime පෙන්වීම සඳහා විශේෂ පරීක්ෂාවක් යොදා ඇත.
+            let filteredCmds = [];
+            if (selectedCat.name === 'movie' || selectedCat.name === 'download') {
+                filteredCmds = commands.filter(c => (c.category === 'movie' || c.category === 'download' || c.pattern === 'thenkiri' || c.pattern === 'anime') && !c.dontAddCommandList);
+            } else {
+                filteredCmds = commands.filter(c => c.category === selectedCat.name && !c.dontAddCommandList);
+            }
+
             const uniqueCmds = Array.from(new Map(filteredCmds.map(item => [item['pattern'], item])).values());
 
             const subMenu = `
@@ -490,11 +495,11 @@ ${uniqueCmds.length > 0
 });
 
 // ==========================================
-// 3. MOVIE & TV SHOW COMMAND (THENKIRI)
+// 3. MOVIE & TV SHOW COMMAND (THENKIRI) - Belongs to 'movie' & 'download'
 // ==========================================
 cmd({
     pattern: "thenkiri",
-    alias: ["tk", "movie", "tenkiri", "tv"],
+    alias: ["tk", "tenkiri", "tv"],
     desc: "Searches movies & TV series from Thenkiri",
     category: "movie",
     filename: __filename
@@ -536,13 +541,13 @@ cmd({
 });
 
 // ==========================================
-// 4. ANIME COMMAND (ANIMEHEAVEN)
+// 4. ANIME COMMAND (ANIMEHEAVEN) - Belongs to 'movie' & 'download'
 // ==========================================
 cmd({
     pattern: "anime",
     alias: ["animesearch", "animedl"],
     desc: "Searches anime from AnimeHeaven",
-    category: "anime",
+    category: "movie", // මෙය movie සහ download මෙනු දෙකටම පෙන්වීම සඳහා category එක movie ලෙස හෝ download ලෙස සැකසිය හැක
     filename: __filename
 }, async (socket, msg, m, { from, args }) => {
     if (!args || args.length === 0) {
@@ -613,7 +618,7 @@ cmd({
 });
 
 cmd({
-    pattern: "restart",
+    pattern: `restart`,
     desc: "Restarts bot",
     category: "owner",
     filename: __filename
