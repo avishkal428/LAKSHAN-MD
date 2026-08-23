@@ -1,201 +1,252 @@
 const { cmd } = require('../command');
 const scraper = require('liyanaarachchi-thenkiri-scrap');
+const axios = require('axios');
 
+const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
+const FOOTER = "ᴀᴠɪꜱʜᴋᴀ ヤ";
+
+// Active Chat Tracker (JID මත පදනම්ව)
+const thenkiriSessions = new Map();
+
+// 1️⃣ MAIN COMMAND: Search & Display Movies
 cmd({
-    pattern: "thenkiri",
-    alias: ["tk", "thenkiridl"],
+    pattern: "tenkiri",
+    alias: ["tk", "thenkiri"],
     desc: "Search and download movies from Thenkiri",
     category: "download",
-    react: "🎥",
+    react: "🍿",
 },
 async (socket, msg, m, { from, args }) => {
-    const sender = from;
-    const DEFAULT_FOOTER = `\n\n> 🧬 ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝐋𝐀𝐊𝐒𝐇𝐀𝐍-𝐌𝐃`;
-    const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500";
+    const chatJid = from;
 
     if (!args.length) {
-        await socket.sendMessage(sender, {
-            text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n🎬 *Example:*\n• .thenkiri deadpool\n• .tk rrr\n\n📝 _Please provide the Movie name!_${DEFAULT_FOOTER}`
+        await socket.sendMessage(chatJid, {
+            text: `🍿 *THENKIRI MOVIE DOWNLOADER* 🍿\n\n⚠️ *Please provide a movie name!*\n\nExample: .tenkiri deadpool\n\n> ${FOOTER}`
         }, { quoted: msg });
         return;
     }
 
-    const thenkiriQuery = args.join(' ');
-    await socket.sendMessage(sender, { 
-        text: `*❪ SEARCHING ❫*\n\n🔍 *Searching Thenkiri...*\n⚡ _Please wait a moment._`
-    });
+    const searchQuery = args.join(' ');
 
     try {
-        // 1️⃣ Search Movie
-        const searchResults = await scraper.searchMovie(thenkiriQuery);
+        const searchResults = await scraper.searchMovie(searchQuery);
 
         if (!searchResults || searchResults.length === 0) {
-            await socket.sendMessage(sender, {
-                text: `*❪ NO RESULTS ❫*\n\n😞 *No Results Found!*\n\n🎬 *Query:* _${thenkiriQuery}_\n💡 *Tip:* _Please check the spelling and try again!_${DEFAULT_FOOTER}`
+            await socket.sendMessage(chatJid, {
+                text: `🍿 *THENKIRI MOVIE DOWNLOADER* 🍿\n\n🔍 *Search Query:* ${searchQuery}\n\n❌ No movies found!\n\n> ${FOOTER}`
             }, { quoted: msg });
             return;
         }
 
-        const tkResults = searchResults.slice(0, 25);
-        let listText = `*❪ SEARCH RESULTS ❫*\n\n🎯 *Query:* _${thenkiriQuery}_\n📊 *Results:* _${tkResults.length} Items_\n\n*👇 SELECT A NUMBER 👇*\n\n`;
+        const tkResults = searchResults.slice(0, 15);
+        let listText = `🍿 *THENKIRI MOVIE DOWNLOADER* 🍿\n\n🔍 *Search Query:* ${searchQuery}\n\n🔽 *Reply with a number to select a movie:*\n\n`;
 
         tkResults.forEach((item, index) => {
-            const num = (index + 1) < 10 ? `0${index + 1}` : `${index + 1}`;
             const title = item.title || item.name || "Movie";
-            listText += `*${num}* ➜ 🎥 _${title.substring(0, 50)}_\n`;
+            listText += `*${index + 1}.* ${title}\n`;
         });
 
-        listText += `${DEFAULT_FOOTER}`;
-        
-        const sentMsg = await socket.sendMessage(sender, { text: listText }, { quoted: msg });
-        const messageID = sentMsg.key.id;
+        listText += `\n> ${FOOTER}`;
 
-        // Selection Listener
-        const handleSelection = async ({ messages: replyMessages }) => {
-            const replyMek = replyMessages[0];
-            if (!replyMek?.message) return;
+        await socket.sendMessage(chatJid, { text: listText }, { quoted: msg });
 
-            const messageType = replyMek.message.conversation || replyMek.message.extendedTextMessage?.text;
-            const isReplyToSentMsg = replyMek.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
-
-            if (isReplyToSentMsg && sender === replyMek.key.remoteJid) {
-                const choice = parseInt(messageType) - 1;
-                if (isNaN(choice) || choice < 0 || choice >= tkResults.length) {
-                    await socket.sendMessage(sender, {
-                        text: `*❪ INVALID ❫*\n\n⚠️ *Wrong Number!*\n🎯 *Range:* _01 - ${tkResults.length}_\n📝 _Please reply with a valid number!_${DEFAULT_FOOTER}`
-                    }, { quoted: replyMek });
-                    return;
-                }
-
-                const selectedItem = tkResults[choice];
-
-                await socket.sendMessage(sender, { 
-                    text: `*❪ FETCHING ❫*\n\n🎬 *Fetching Download Options...*\n⚡ _Please wait..._`
-                }, { quoted: replyMek });
-
-                try {
-                    // 2️⃣ Get Download Options
-                    const options = await scraper.getDownloadOptions(selectedItem.link);
-
-                    if (!options || options.length === 0) {
-                        await socket.sendMessage(sender, {
-                            text: `*❪ NO DOWNLOADS ❫*\n\n⚠️ *No Download Links Found!*\n😞 _There are no direct links available for this movie!_${DEFAULT_FOOTER}`
-                        }, { quoted: replyMek });
-                        return;
-                    }
-
-                    // Movie Details & Poster Photo
-                    const moviePosterUrl = selectedItem.img || selectedItem.image || selectedItem.poster || DEFAULT_IMAGE;
-                    const movieDetailsText = `*❪ MOVIE DETAILS ❫*\n\n🎬 *Title:* ${selectedItem.title}\n🗿 *Source:* thenkiri.com${DEFAULT_FOOTER}`;
-
-                    await socket.sendMessage(sender, {
-                        image: { url: moviePosterUrl },
-                        caption: movieDetailsText
-                    }, { quoted: replyMek });
-
-                    // 🛠️ Quality සහ Size පෙනෙන සේ සැකසූ Download Menu එක:
-                    let downloadOptionsText = `*❪ DOWNLOADS ❫*\n\n📥 *Select Quality / Option:*\n\n`;
-
-                    options.forEach((opt, i) => {
-                        const num = (i + 1) < 10 ? `0${i + 1}` : `${i + 1}`;
-                        // Quality එක සහ Size එක වෙන්කර ගැනීම
-                        const quality = opt.quality || opt.name || opt.title || 'HD';
-                        const size = opt.size ? ` 💾 [_${opt.size}_]` : '';
-
-                        downloadOptionsText += `*${num}* ➜ 🎥 *${quality}*${size}\n`;
-                    });
-
-                    downloadOptionsText += `\n*💬 REPLY TO DOWNLOAD 💬*\n📌 _Reply with the number_${DEFAULT_FOOTER}`;
-
-                    const downloadOptionsMsg = await socket.sendMessage(sender, { text: downloadOptionsText }, { quoted: replyMek });
-                    const optionsMsgID = downloadOptionsMsg.key.id;
-
-                    // Download Listener
-                    const handleDownload = async ({ messages: downloadMessages }) => {
-                        const downloadMek = downloadMessages[0];
-                        if (!downloadMek?.message) return;
-
-                        const downloadChoice = downloadMek.message.conversation || downloadMek.message.extendedTextMessage?.text;
-                        const isReplyToOptionsMsg = downloadMek.message.extendedTextMessage?.contextInfo?.stanzaId === optionsMsgID;
-
-                        if (isReplyToOptionsMsg && sender === downloadMek.key.remoteJid) {
-                            const choiceNum = parseInt(downloadChoice) - 1;
-                            
-                            if (isNaN(choiceNum) || choiceNum < 0 || choiceNum >= options.length) {
-                                await socket.sendMessage(sender, {
-                                    text: `*❪ INVALID ❫*\n\n⚠️ *Wrong Number!*\n🎯 *Range:* _01 - ${options.length}_\n📝 _Please reply with a valid number!_${DEFAULT_FOOTER}`
-                                }, { quoted: downloadMek });
-                                return;
-                            }
-
-                            const selectedOption = options[choiceNum];
-                            const selectedQuality = selectedOption.quality || selectedOption.name || 'HD';
-                            const selectedSize = selectedOption.size ? ` | 💾 ${selectedOption.size}` : '';
-
-                            await socket.sendMessage(sender, { react: { text: '⏳', key: downloadMek.key } });
-
-                            try {
-                                // 3️⃣ Get Direct Video Link (Auto Bypass)
-                                const finalDirectLink = await scraper.bypassDownloadwella(selectedOption.link);
-
-                                if (!finalDirectLink) {
-                                    throw new Error("Direct link could not be generated.");
-                                }
-
-                                await socket.sendMessage(sender, { react: { text: '📥', key: downloadMek.key } });
-
-                                const safeFileName = `${selectedItem.title.replace(/[/\\?%*:|"<>]/g, "")}.mp4`;
-
-                                try {
-                                    // Direct File Download Attempt
-                                    await socket.sendMessage(sender, {
-                                        document: { url: finalDirectLink },
-                                        mimetype: 'video/mp4',
-                                        fileName: safeFileName,
-                                        caption: `*❪ THENKIRI ❫*\n\n🎭 *${selectedItem.title}*\n📌 *Quality:* _${selectedQuality}_${selectedSize}${DEFAULT_FOOTER}`
-                                    }, { quoted: downloadMek });
-
-                                    await socket.sendMessage(sender, { react: { text: '✅', key: downloadMek.key } });
-
-                                } catch (fileSendErr) {
-                                    // If File size is too large, send Direct Download Link Text
-                                    await socket.sendMessage(sender, {
-                                        text: `*❪ DIRECT DOWNLOAD LINK ❫*\n\n🎬 *Title:* ${selectedItem.title}\n📌 *Quality:* ${selectedQuality}${selectedSize}\n\n🔗 *Download Link:* \n${finalDirectLink}\n\n💡 _File එක විශාල වැඩි නිසා Bot ට Send කිරීමට නොහැක. ඉහත Link එක ක්ලික් කර Browser එකෙන් Download කරගන්න!_${DEFAULT_FOOTER}`
-                                    }, { quoted: downloadMek });
-
-                                    await socket.sendMessage(sender, { react: { text: '🔗', key: downloadMek.key } });
-                                }
-
-                            } catch (downloadError) {
-                                console.error('Bypass error:', downloadError);
-                                await socket.sendMessage(sender, {
-                                    text: `*❪ ERROR ❫*\n\n❌ *Download Failed!*\n🚫 _${downloadError.message || 'Unable to fetch bypass link'}_${DEFAULT_FOOTER}`
-                                }, { quoted: downloadMek });
-                            } finally {
-                                socket.ev.off('messages.upsert', handleDownload);
-                                socket.ev.off('messages.upsert', handleSelection);
-                            }
-                        }
-                    };
-
-                    socket.ev.on('messages.upsert', handleDownload);
-
-                } catch (detailsError) {
-                    console.error('Options error:', detailsError);
-                    await socket.sendMessage(sender, {
-                        text: `*❪ ERROR ❫*\n\n❌ *Movie Details Error!*\n🚫 _${detailsError.message}_${DEFAULT_FOOTER}`
-                    }, { quoted: replyMek });
-                    socket.ev.off('messages.upsert', handleSelection);
-                }
-            }
-        };
-
-        socket.ev.on('messages.upsert', handleSelection);
+        // Save active session for the chat
+        thenkiriSessions.set(chatJid, {
+            step: 'SELECTION',
+            results: tkResults,
+            timestamp: Date.now()
+        });
 
     } catch (error) {
-        console.error('Thenkiri command error:', error);
-        await socket.sendMessage(sender, {
-            text: `*❪ SYSTEM ERROR ❫*\n\n❌ *System Error!*\n🚫 _${error.message || 'Unknown error'}_\n\n🔄 _Please try again later..._${DEFAULT_FOOTER}`
+        console.error('Thenkiri Search Error:', error);
+        await socket.sendMessage(chatJid, {
+            text: `❌ *Error:* ${error.message || 'Something went wrong!'}\n\n> ${FOOTER}`
         }, { quoted: msg });
+    }
+});
+
+// 2️⃣ AUTO REPLY LISTENER: Same File Single Handler
+cmd({
+    on: "body"
+},
+async (socket, msg, m, { from, body, isCmd }) => {
+    try {
+        // Command එකක් නම් Reply Listener එක Ignore කරන්න
+        if (isCmd) return;
+
+        const chatJid = from;
+        const session = thenkiriSessions.get(chatJid);
+
+        if (!session) return;
+
+        // Session timeout check (5 Minutes)
+        if (Date.now() - session.timestamp > 300000) {
+            thenkiriSessions.delete(chatJid);
+            return;
+        }
+
+        // Quoted message එකක් නැත්නම් Ignore කරන්න
+        if (!m.quoted) return;
+
+        const textMsg = body ? body.trim() : "";
+        if (!textMsg || isNaN(textMsg)) return;
+
+        // ----------------------------------------------------
+        // STEP 1: MOVIE SELECTION
+        // ----------------------------------------------------
+        if (session.step === 'SELECTION') {
+            const choice = parseInt(textMsg) - 1;
+            const tkResults = session.results;
+
+            if (choice < 0 || choice >= tkResults.length) return;
+
+            const selectedMovie = tkResults[choice];
+            const statusMsg = await socket.sendMessage(chatJid, { text: `⏳ *Fetching Details...*` }, { quoted: msg });
+
+            const options = await scraper.getDownloadOptions(selectedMovie.link);
+
+            if (!options || options.length === 0) {
+                await socket.sendMessage(chatJid, { text: `❌ No download links found for this movie.` }, { quoted: msg });
+                thenkiriSessions.delete(chatJid);
+                return;
+            }
+
+            let tmdbData = null;
+            let cleanTitle = selectedMovie.title
+                .split('|')[0]
+                .replace(/\(\d{4}\)/g, '')
+                .replace(/download|movie|sinhala|sub/gi, '')
+                .trim();
+
+            try {
+                const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
+                const searchRes = await axios.get(searchUrl);
+
+                if (searchRes.data?.results?.[0]) {
+                    const movieId = searchRes.data.results[0].id;
+                    const detailUrl = `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&append_to_response=credits,videos`;
+                    const detailRes = await axios.get(detailUrl);
+                    tmdbData = detailRes.data;
+                }
+            } catch (e) {
+                console.error("TMDB Fetch Error:", e.message);
+            }
+
+            const title = tmdbData?.title || cleanTitle;
+            const year = tmdbData?.release_date ? tmdbData.release_date.split('-')[0] : '';
+            const rating = tmdbData?.vote_average ? `${tmdbData.vote_average.toFixed(1)} / 10` : 'N/A';
+            const runtime = tmdbData?.runtime ? `${Math.floor(tmdbData.runtime / 60)}h ${tmdbData.runtime % 60}m` : 'N/A';
+            const releaseDate = tmdbData?.release_date || 'N/A';
+            const language = tmdbData?.original_language ? tmdbData.original_language.toUpperCase() : 'English';
+            const genres = tmdbData?.genres ? tmdbData.genres.map(g => g.name).join(', ') : 'Action, Adventure';
+            
+            const cast = tmdbData?.credits?.cast 
+                ? tmdbData.credits.cast.slice(0, 3).map(c => `• ${c.name} as ${c.character}`).join('\n') 
+                : '• N/A';
+
+            const plot = tmdbData?.overview || 'No plot available.';
+            const trailerObj = tmdbData?.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+            const trailerLink = trailerObj ? `https://youtu.be/${trailerObj.key}` : 'N/A';
+
+            const posterImg = tmdbData?.poster_path 
+                ? `https://image.tmdb.org/t/p/w780${tmdbData.poster_path}`
+                : (selectedMovie.img || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500");
+
+            let captionText = `🎬 *${title}* ${year ? `(${year})` : ''}\n\n`;
+            captionText += `⭐ *Rating:* ${rating}\n`;
+            captionText += `⌛ *Runtime:* ${runtime}\n`;
+            captionText += `📅 *Release Date:* ${releaseDate}\n`;
+            captionText += `🌐 *Language:* ${language}\n\n`;
+            captionText += `🎭 *Genres:* ${genres}\n\n`;
+            captionText += `👥 *Cast:*\n${cast}\n\n`;
+            captionText += `📖 *Plot:* ${plot}\n\n`;
+            captionText += `🎬 *Trailer:* ${trailerLink}\n`;
+            captionText += `----------------------------------------\n\n`;
+            captionText += `📥 *Select Download Quality:*\n\n`;
+
+            options.forEach((opt, i) => {
+                const qName = opt.quality || opt.name || 'Download Movie';
+                captionText += `*${i + 1}.* ${qName}\n`;
+            });
+
+            captionText += `\n> ${FOOTER}`;
+
+            await socket.sendMessage(chatJid, {
+                text: "✅ *Details Fetched Successfully* ✅",
+                edit: statusMsg.key
+            });
+
+            await socket.sendMessage(chatJid, {
+                image: { url: posterImg },
+                caption: captionText
+            }, { quoted: msg });
+
+            thenkiriSessions.set(chatJid, {
+                step: 'DOWNLOAD',
+                options: options,
+                movieTitle: title,
+                timestamp: Date.now()
+            });
+        }
+
+        // ----------------------------------------------------
+        // STEP 2: QUALITY / DOWNLOAD SELECTION
+        // ----------------------------------------------------
+        else if (session.step === 'DOWNLOAD') {
+            const choiceNum = parseInt(textMsg) - 1;
+            const options = session.options;
+
+            if (choiceNum < 0 || choiceNum >= options.length) return;
+
+            const selectedOption = options[choiceNum];
+            const dlStatusMsg = await socket.sendMessage(chatJid, { text: `⚡ *Downloading Movie File...*` }, { quoted: msg });
+
+            const finalDirectLink = await scraper.bypassDownloadwella(selectedOption.link);
+
+            if (!finalDirectLink) {
+                await socket.sendMessage(chatJid, {
+                    text: `❌ Link bypass failed.`,
+                    edit: dlStatusMsg.key
+                });
+                thenkiriSessions.delete(chatJid);
+                return;
+            }
+
+            const qName = selectedOption.quality || selectedOption.name || 'Download Movie';
+            const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
+
+            try {
+                // Try Sending Direct Document File
+                await socket.sendMessage(chatJid, {
+                    document: { url: finalDirectLink },
+                    mimetype: 'video/x-matroska',
+                    fileName: safeFileName,
+                    caption: `🍿 *${session.movieTitle}*\n📌 *Quality:* ${qName}\n\n> ${FOOTER}`
+                }, { quoted: msg });
+
+                await socket.sendMessage(chatJid, {
+                    text: "✅ *Movie Upload Successful* ✅",
+                    edit: dlStatusMsg.key
+                });
+
+            } catch (fileErr) {
+                console.error("File upload error (2GB+ Limit):", fileErr.message);
+
+                // Fallback for large files
+                await socket.sendMessage(chatJid, {
+                    text: `🍿 *${session.movieTitle}*\n📌 *Quality:* ${qName}\n\n⚠️ *File size exceeds WhatsApp limit (2GB+).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                }, { quoted: msg });
+
+                await socket.sendMessage(chatJid, {
+                    text: "✅ *Direct Link Sent Successfully* ✅",
+                    edit: dlStatusMsg.key
+                });
+            }
+
+            thenkiriSessions.delete(chatJid);
+        }
+
+    } catch (err) {
+        console.error("Thenkiri Reply Listener Error:", err);
     }
 });
