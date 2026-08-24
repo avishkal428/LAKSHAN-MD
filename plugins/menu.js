@@ -1,4 +1,4 @@
-Const { readEnv } = require('../lib/database');
+const { readEnv } = require('../lib/database');
 const { cmd, commands } = require('../command');
 const { runtime, sleep } = require('../lib/functions');
 const scraperThenkiri = require('liyanaarachchi-thenkiri-scrap');
