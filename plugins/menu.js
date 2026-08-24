@@ -31,7 +31,6 @@ function clearUserSessions(sessionKey) {
     global.animeSessions.delete(sessionKey);
 }
 
-// TITLE CLEANING FIX FOR TV SHOWS (e.g. "Ludwig (Episode 1 – 3 Added)" -> "Ludwig")
 function cleanSearchTitle(rawTitle) {
     return rawTitle
         .split('|')[0]
@@ -70,6 +69,14 @@ async function fetchMediaDetails(cleanTitle) {
         console.error("TMDB Fetch Error:", e.message);
     }
     return null;
+}
+
+// Helper function to extract exact Quoted Stanza ID safely
+function getQuotedMessageId(mek) {
+    return mek.message?.extendedTextMessage?.contextInfo?.stanzaId || 
+           mek.message?.imageMessage?.contextInfo?.stanzaId || 
+           mek.message?.videoMessage?.contextInfo?.stanzaId || 
+           mek.message?.documentMessage?.contextInfo?.stanzaId || null;
 }
 
 // ==========================================
@@ -156,9 +163,7 @@ async (conn, mek, m, { from, body, isCmd, sender }) => {
         const choiceNum = parseInt(textMsg);
         const choiceIndex = choiceNum - 1;
         const sessionKey = getSessionKey(from, sender);
-
-        const quotedMsg = mek.message?.extendedTextMessage?.contextInfo;
-        const quotedId = quotedMsg?.stanzaId;
+        const quotedId = getQuotedMessageId(mek);
 
         // --- ROUTE 1: THENKIRI ---
         if (global.thenkiriSessions.has(sessionKey)) {
@@ -169,9 +174,9 @@ async (conn, mek, m, { from, body, isCmd, sender }) => {
                 return;
             }
 
-            // STRICT QUOTED MATCH CHECK
+            // CHECK QUOTED MESSAGE MATCH EXACTLY
             if (quotedId && quotedId !== session.targetMsgId) {
-                return; 
+                return;
             }
 
             // STEP 1: SELECTION
@@ -249,7 +254,7 @@ async (conn, mek, m, { from, body, isCmd, sender }) => {
                         }, { quoted: mek });
                     }
 
-                    // UPDATE SESSION TO DOWNLOAD STEP
+                    // UPDATE SESSION TO DOWNLOAD STEP WITH NEW TARGET ID
                     global.thenkiriSessions.set(sessionKey, {
                         step: 'DOWNLOAD',
                         targetMsgId: sentDlMsg.key.id,
