@@ -17,9 +17,12 @@ async (conn, mek, m, { from, args, q, reply }) => {
 
         const searchUrl = `https://sahan-api-hub.vercel.app/api/adult/xnxx/search?apikey=${API_KEY}&q=${encodeURIComponent(q)}`;
         const response = await axios.get(searchUrl, { timeout: 30000 });
-        const data = response.data;
+        
+        if (!response.data || response.status !== 200) {
+            return reply("❌ API Server එකෙන් ප්‍රතිචාරයක් නොලැබුණි.");
+        }
 
-        const results = data.result || data.data || data;
+        const results = response.data.result || response.data.data || response.data;
 
         if (!results || !Array.isArray(results) || results.length === 0) {
             return reply("❌ කිසිදු වීඩියෝවක් හමු නොවීය.");
@@ -31,58 +34,64 @@ async (conn, mek, m, { from, args, q, reply }) => {
             msg += `🔗 *Link:* ${item.link || item.url}\n\n`;
         });
 
-        msg += `💡 *Download කිරීමට:* \n.xnxx <Video_URL>`;
+        msg += `💡 *Download කිරීමට Link එක Copy කර යවන්න:* \n.xnxx <Video_URL>`;
 
         return await conn.sendMessage(from, { text: msg }, { quoted: mek });
 
     } catch (e) {
-        console.error(e);
-        return reply("❌ Search කිරීමේදී දෝෂයක් සිදු විය. පසුව නැවත උත්සාහ කරන්න.");
+        console.error("XNXX Search Error:", e.message);
+        return reply("❌ Search කිරීමේදී දෝෂයක් සිදු විය. API Server එක ක්‍රියා විරහිත වී තිබිය හැක.");
     }
 });
 
-// 2. Large File Stream Downloader Command (Up to 2GB)
+// 2. Download Command (Auto detects Link or Search Term)
 cmd({
     pattern: "xnxx",
     alias: ["xnxxdl"],
-    desc: "Download videos from XNXX as Document",
+    desc: "Download videos from XNXX",
     category: "download",
     filename: __filename
 },
 async (conn, mek, m, { from, args, q, reply }) => {
     try {
-        if (!q) return reply("⚠️ කරුණාකර XNXX වීඩියෝ Link එක ලබාදෙන්න! (Ex: .xnxx <URL>)");
+        if (!q) return reply("⚠️ කරුණාකර XNXX වීඩියෝ Link එකක් ලබාදෙන්න! (Ex: .xnxx https://www.xnxx.com/video-...)");
+
+        // Link එකක් නෙමේ නම් auto search එකට redirect කිරීම
+        if (!q.includes("xnxx.com")) {
+            return reply("⚠️ මෙය නිවැරදි XNXX Link එකක් නොවේ! Search කිරීමට නම් `.xnxxsearch " + q + "` භාවිතා කරන්න.");
+        }
 
         await reply("📥 වීඩියෝ විස්තර ලබා ගනිමින් පවතී, කරුණාකර රැඳී සිටින්න...");
 
-        // 1. Fetch Download Link from API
         const downloadApiUrl = `https://sahan-api-hub.vercel.app/api/adult/xnxx/download?apikey=${API_KEY}&url=${encodeURIComponent(q)}`;
         const apiResponse = await axios.get(downloadApiUrl, { timeout: 60000 });
-        const data = apiResponse.data;
+        
+        if (!apiResponse.data) {
+            return reply("❌ API Server එකෙන් දත්ත ලබා ගැනීමට නොහැකි විය.");
+        }
 
-        const result = data.result || data.data || data;
+        const result = apiResponse.data.result || apiResponse.data.data || apiResponse.data;
         const mediaUrl = result.files?.high || result.files?.low || result.dl_link || result.download_url;
 
         if (!mediaUrl) {
-            return reply("❌ වීඩියෝ Download Link එක සොයා ගැනීමට නොහැකි විය.");
+            return reply("❌ වීඩියෝ Download Link එක සොයා ගැනීමට නොහැකි විය. වෙනත් Link එකක් උත්සාහ කරන්න.");
         }
 
         const title = result.title || 'XNXX_Video';
-        const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_"); // Filename cleanup
+        const cleanTitle = title.replace(/[\\/:*?"<>|]/g, "_");
 
-        await reply("⚡ 2GB දක්වා Files සඳහා Stream Mode සක්‍රීයයි! Upload වීම ආරම්භ වේ...");
+        await reply("⚡ File එක Document එකක් ලෙස Upload වීම ආරම්භ වේ...");
 
-        // 2. Stream File Direct to WhatsApp without storing in RAM
+        // Stream File Directly to prevent RAM crashes
         const mediaStream = await axios({
             method: 'get',
             url: mediaUrl,
             responseType: 'stream',
-            timeout: 0 // Disable timeout for large files
+            timeout: 0
         });
 
         const caption = `🔞 *XNXX DOWNLOADER* 🔞\n\n📌 *Title:* ${title}\n⏱️ *Duration:* ${result.duration || 'N/A'}\n\n© Powered by LAKSHAN-MD`;
 
-        // Send as Document (Supports up to 2GB)
         await conn.sendMessage(from, {
             document: { stream: mediaStream.data },
             mimetype: 'video/mp4',
@@ -91,8 +100,7 @@ async (conn, mek, m, { from, args, q, reply }) => {
         }, { quoted: mek });
 
     } catch (e) {
-        console.error(e);
-        return reply("❌ Download/Upload කිරීමේදී දෝෂයක් සිදු විය. File එක විශාල වැඩි වීම නිසා Server එකෙන් Cancel වූවා විය හැක.");
+        console.error("XNXX Download Error:", e.message);
+        return reply("❌ Download කිරීමේදී දෝෂයක් සිදු විය. API Server එකේ ප්‍රශ්නයක් හෝ Link එක අසංගත විය හැක.");
     }
 });
-
