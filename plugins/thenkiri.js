@@ -64,6 +64,9 @@ cmd({
     const searchQuery = args.join(' ');
 
     try {
+        // ALWAYS WIPE PREVIOUS SESSION COMPLETELY ON A NEW SEARCH COMMAND
+        global.thenkiriSessions.delete(from);
+
         const results = await scraperThenkiri.searchMovie(searchQuery);
 
         if (!results || results.length === 0) {
@@ -82,7 +85,7 @@ cmd({
 
         await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        // FORCE OVERWRITE SESSION COMPLETELY
+        // SET FRESH SELECTION SESSION
         global.thenkiriSessions.set(from, {
             step: 'SELECTION',
             results: tkResults,
@@ -198,7 +201,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 }, { quoted: msg });
             }
 
-            // UPDATE SESSION TO DOWNLOAD STEP WITH FRESH OPTIONS
+            // UPDATE SESSION TO DOWNLOAD STEP
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
                 results: [],
@@ -217,7 +220,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 return;
             }
 
-            // Clear session to prevent looping
+            // Clear session immediately to prevent looping
             global.thenkiriSessions.delete(from);
 
             if (selectedNum === 0) {
