@@ -273,7 +273,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
                             await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
 
-                        } else (fileErr) {
+                        } catch (fileErr) {
                             await socket.sendMessage(from, {
                                 text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *Direct Send Failed (File > 2GB or Link Expired).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                             }, { quoted: msg });
@@ -289,4 +289,3 @@ async (socket, msg, m, { from, body, isCmd }) => {
         console.error("Thenkiri Reply Listener Error:", err);
     }
 });
-,
