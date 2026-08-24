@@ -10,7 +10,6 @@ const { exec } = require("child_process");
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
-// Global Active Sessions Maps & Message Deduplication Guard
 if (!global.menuSessions) global.menuSessions = new Map();
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
 if (!global.animeSessions) global.animeSessions = new Map();
@@ -22,14 +21,17 @@ function formatRAMUsage() {
     return `${used.toFixed(2)} MB / ${total.toFixed(0)} MB`;
 }
 
-// Clear all active sessions for a given chat to avoid overlap
-function clearAllSessions(from) {
-    global.menuSessions.delete(from);
-    global.thenkiriSessions.delete(from);
-    global.animeSessions.delete(from);
+// User & Chat Unique Key to prevent session mixing
+function getSessionKey(from, sender) {
+    return `${from}_${sender}`;
 }
 
-// Helper: Fetch TMDB Details
+function clearUserSessions(sessionKey) {
+    global.menuSessions.delete(sessionKey);
+    global.thenkiriSessions.delete(sessionKey);
+    global.animeSessions.delete(sessionKey);
+}
+
 async function fetchMediaDetails(cleanTitle) {
     try {
         let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
@@ -58,7 +60,7 @@ async function fetchMediaDetails(cleanTitle) {
 }
 
 // ==========================================
-// 1. INTERACTIVE MENU COMMAND
+// 1. MENU COMMAND
 // ==========================================
 cmd({
     pattern: 'menu',
@@ -69,9 +71,10 @@ cmd({
 },
 async (conn, mek, m, { from, pushname = 'User', sender }) => {
     try {
-        clearAllSessions(from); // Clear all previous sessions immediately
-        const config = await readEnv();
+        const sessionKey = getSessionKey(from, sender);
+        clearUserSessions(sessionKey);
 
+        const config = await readEnv();
         const categories = [
             { title: 'Main',     name: 'main',     emoji: '🏆' },
             { title: 'Owner',    name: 'owner',    emoji: '👑' },
@@ -95,7 +98,7 @@ async (conn, mek, m, { from, pushname = 'User', sender }) => {
 🔰 MAIN MENU 🔰  
 ┏━━━━━━━━━━━━━┓  
 ${categories.map((cat, i) => `┃ ${i + 1} ${cat.emoji} ${cat.title}`).join('\n')}  
-┗━━━━━━━━━━━━━=========┛  
+┗━━━━━━━━━━━━━┛  
 
 💬 Reply with a category number to get command list!  
 
@@ -108,31 +111,28 @@ ${categories.map((cat, i) => `┃ ${i + 1} ${cat.emoji} ${cat.title}`).join('\n'
             contextInfo: { mentionedJid: [sender] }
         }, { quoted: mek });
 
-        global.menuSessions.set(from, {
-            msgId: sentMsg.key.id,
-            sender,
+        global.menuSessions.set(sessionKey, {
+            targetMsgId: sentMsg.key.id,
             categories,
             timestamp: Date.now()
         });
 
     } catch (e) {
-        console.error('Menu Command Error:', e);
         await conn.sendMessage(from, { text: '❌ Failed to load main menu.' }, { quoted: mek });
     }
 });
 
 // ==========================================
-// 2. GLOBAL REPLY LISTENER (PROTECTED STRICT ROUTING)
+// 2. GLOBAL REPLY LISTENER
 // ==========================================
 cmd({
     on: "body"
 },
-async (conn, mek, m, { from, body, isCmd }) => {
+async (conn, mek, m, { from, body, isCmd, sender }) => {
     try {
         if (isCmd) return;
 
-        // --- HARD ANTI-DUPLICATE GUARD ---
-        const msgKey = mek.key.id || (mek.key.remoteJid + "_" + mek.messageTimestamp);
+        const msgKey = mek.key.id || (from + "_" + mek.messageTimestamp);
         if (global.processedMsgKeys.has(msgKey)) return;
         global.processedMsgKeys.add(msgKey);
         if (global.processedMsgKeys.size > 200) global.processedMsgKeys.clear();
@@ -142,30 +142,24 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
         const choiceNum = parseInt(textMsg);
         const choiceIndex = choiceNum - 1;
+        const sessionKey = getSessionKey(from, sender);
 
-        const quotedMsg = mek.message?.extendedTextMessage?.contextInfo;
-        const quotedId = quotedMsg?.stanzaId;
-
-        // ------------------------------------------
-        // ROUTE 1: THENKIRI MOVIE / TV REPLIES
-        // ------------------------------------------
-        if (global.thenkiriSessions.has(from)) {
-            const session = global.thenkiriSessions.get(from);
+        // --- THENKIRI ROUTE ---
+        if (global.thenkiriSessions.has(sessionKey)) {
+            const session = global.thenkiriSessions.get(sessionKey);
 
             if (Date.now() - session.timestamp > 300000) {
-                global.thenkiriSessions.delete(from);
+                global.thenkiriSessions.delete(sessionKey);
                 return;
             }
 
-            // Verify if reply belongs to active step message
-            if (session.step === 'SELECTION' && quotedId && quotedId !== session.targetMsgId) return;
-            if (session.step === 'DOWNLOAD' && quotedId && quotedId !== session.targetMsgId) return;
-
-            // STEP 1: MOVIE / TV SELECTION
+            // STEP 1: SELECTION
             if (session.step === 'SELECTION') {
                 const tkResults = session.results;
                 if (choiceIndex >= 0 && choiceIndex < tkResults.length) {
-                    session.step = 'FETCHING';
+                    
+                    // CLEAR CURRENT SESSION TO PREVENT REPEAT TRIGGERING
+                    global.thenkiriSessions.delete(sessionKey);
 
                     const selectedMovie = tkResults[choiceIndex];
                     const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: mek });
@@ -174,7 +168,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
                     if (!options || options.length === 0) {
                         await conn.sendMessage(from, { text: `❌ No download links found.` }, { quoted: mek });
-                        global.thenkiriSessions.delete(from);
                         return;
                     }
 
@@ -235,7 +228,8 @@ async (conn, mek, m, { from, body, isCmd }) => {
                         caption: captionText
                     }, { quoted: mek });
 
-                    global.thenkiriSessions.set(from, {
+                    // SAVE NEW DOWNLOAD SESSION SPECIFICALLY FOR THIS USER
+                    global.thenkiriSessions.set(sessionKey, {
                         step: 'DOWNLOAD',
                         targetMsgId: sentDlMsg.key.id,
                         options: options,
@@ -246,10 +240,10 @@ async (conn, mek, m, { from, body, isCmd }) => {
                 return;
             }
 
-            // STEP 2: DOWNLOAD FILE
+            // STEP 2: DOWNLOAD
             if (session.step === 'DOWNLOAD') {
                 const options = session.options;
-                global.thenkiriSessions.delete(from);
+                global.thenkiriSessions.delete(sessionKey);
 
                 if (choiceNum === 0) {
                     await conn.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: mek });
@@ -282,7 +276,7 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
                 if (choiceIndex >= 0 && choiceIndex < options.length) {
                     const selectedOption = options[choiceIndex];
-                    const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: mek });
+                    const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading & Uploading File...*` }, { quoted: mek });
 
                     const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
 
@@ -316,24 +310,19 @@ async (conn, mek, m, { from, body, isCmd }) => {
             }
         }
 
-        // ------------------------------------------
-        // ROUTE 2: ANIME REPLIES
-        // ------------------------------------------
-        if (global.animeSessions.has(from)) {
-            const session = global.animeSessions.get(from);
+        // --- ANIME ROUTE ---
+        if (global.animeSessions.has(sessionKey)) {
+            const session = global.animeSessions.get(sessionKey);
 
             if (Date.now() - session.timestamp > 300000) {
-                global.animeSessions.delete(from);
+                global.animeSessions.delete(sessionKey);
                 return;
             }
-
-            if (session.step === 'SELECTION' && quotedId && quotedId !== session.targetMsgId) return;
-            if (session.step === 'DOWNLOAD' && quotedId && quotedId !== session.targetMsgId) return;
 
             if (session.step === 'SELECTION') {
                 const animeResults = session.results;
                 if (choiceIndex >= 0 && choiceIndex < animeResults.length) {
-                    session.step = 'FETCHING';
+                    global.animeSessions.delete(sessionKey);
 
                     const selectedAnime = animeResults[choiceIndex];
                     const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Anime Episodes...*` }, { quoted: mek });
@@ -342,7 +331,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
                     if (!episodes || episodes.length === 0) {
                         await conn.sendMessage(from, { text: `❌ No episodes found for this anime.` }, { quoted: mek });
-                        global.animeSessions.delete(from);
                         return;
                     }
 
@@ -364,7 +352,7 @@ async (conn, mek, m, { from, body, isCmd }) => {
                         caption: captionText
                     }, { quoted: mek });
 
-                    global.animeSessions.set(from, {
+                    global.animeSessions.set(sessionKey, {
                         step: 'DOWNLOAD',
                         targetMsgId: sentAnimeDl.key.id,
                         episodes: episodes,
@@ -377,7 +365,7 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
             if (session.step === 'DOWNLOAD') {
                 const episodes = session.episodes;
-                global.animeSessions.delete(from);
+                global.animeSessions.delete(sessionKey);
 
                 if (choiceNum === 0) {
                     await conn.sendMessage(from, { text: `📦 *Downloading ALL (${episodes.length}) Anime Episodes... Please wait!*` }, { quoted: mek });
@@ -444,20 +432,17 @@ async (conn, mek, m, { from, body, isCmd }) => {
             }
         }
 
-        // ------------------------------------------
-        // ROUTE 3: MAIN MENU REPLIES
-        // ------------------------------------------
-        if (global.menuSessions.has(from)) {
-            const menuSession = global.menuSessions.get(from);
+        // --- MENU ROUTE ---
+        if (global.menuSessions.has(sessionKey)) {
+            const menuSession = global.menuSessions.get(sessionKey);
 
             if (Date.now() - menuSession.timestamp > 300000) {
-                global.menuSessions.delete(from);
+                global.menuSessions.delete(sessionKey);
                 return;
             }
 
-            if (quotedId && quotedId !== menuSession.msgId) return;
-
             if (choiceIndex >= 0 && choiceIndex < menuSession.categories.length) {
+                global.menuSessions.delete(sessionKey);
                 const config = await readEnv();
                 const selectedCat = menuSession.categories[choiceIndex];
                 let filteredCmds = [];
@@ -507,7 +492,7 @@ ${uniqueCmds.length > 0
 });
 
 // ==========================================
-// 3. MOVIE & TV SHOW COMMAND (THENKIRI)
+// 3. THENKIRI COMMAND
 // ==========================================
 cmd({
     pattern: "thenkiri",
@@ -515,12 +500,14 @@ cmd({
     desc: "Searches movies & TV series from Thenkiri",
     category: "movie",
     filename: __filename
-}, async (socket, msg, m, { from, args }) => {
+}, async (socket, msg, m, { from, args, sender }) => {
     if (!args || args.length === 0) {
         return socket.sendMessage(from, { text: "⚠️ Please enter a movie or TV show name!" }, { quoted: msg });
     }
 
-    clearAllSessions(from); // Lockout previous sessions instantly
+    const sessionKey = getSessionKey(from, sender);
+    clearUserSessions(sessionKey); // FORCE PURGE PREVIOUS SESSIONS
+
     const searchQuery = args.join(' ');
 
     try {
@@ -542,7 +529,8 @@ cmd({
 
         const sentSearchMsg = await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        global.thenkiriSessions.set(from, {
+        // CREATE A BRAND NEW SELECTION STEP SESSION FOR THIS USER
+        global.thenkiriSessions.set(sessionKey, {
             step: 'SELECTION',
             targetMsgId: sentSearchMsg.key.id,
             results: tkResults,
@@ -555,7 +543,7 @@ cmd({
 });
 
 // ==========================================
-// 4. ANIME COMMAND (ANIMEHEAVEN)
+// 4. ANIME COMMAND
 // ==========================================
 cmd({
     pattern: "anime",
@@ -563,12 +551,14 @@ cmd({
     desc: "Searches anime from AnimeHeaven",
     category: "movie",
     filename: __filename
-}, async (socket, msg, m, { from, args }) => {
+}, async (socket, msg, m, { from, args, sender }) => {
     if (!args || args.length === 0) {
         return socket.sendMessage(from, { text: "⚠️ Please enter an anime name!" }, { quoted: msg });
     }
 
-    clearAllSessions(from); // Clear other active sessions
+    const sessionKey = getSessionKey(from, sender);
+    clearUserSessions(sessionKey);
+
     const searchQuery = args.join(' ');
 
     try {
@@ -590,7 +580,7 @@ cmd({
 
         const sentAnimeSearchMsg = await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        global.animeSessions.set(from, {
+        global.animeSessions.set(sessionKey, {
             step: 'SELECTION',
             targetMsgId: sentAnimeSearchMsg.key.id,
             results: animeResults,
@@ -603,7 +593,7 @@ cmd({
 });
 
 // ==========================================
-// 5. SYSTEM & OTHER COMMANDS
+// 5. OTHER UTILITY COMMANDS
 // ==========================================
 cmd({
     pattern: "system",
