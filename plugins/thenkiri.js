@@ -61,11 +61,6 @@ cmd({
         return socket.sendMessage(from, { text: "⚠️ Please enter a movie or TV show name!" }, { quoted: msg });
     }
 
-    // ALWAYS CLEAR PREVIOUS SESSION ON NEW SEARCH
-    if (global.thenkiriSessions.has(from)) {
-        global.thenkiriSessions.delete(from);
-    }
-
     const searchQuery = args.join(' ');
 
     try {
@@ -85,13 +80,14 @@ cmd({
 
         listText += `\n> ${FOOTER}`;
 
-        const sentMsg = await socket.sendMessage(from, { text: listText }, { quoted: msg });
+        await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        // Save session with search message ID for validation
+        // FORCE OVERWRITE SESSION COMPLETELY
         global.thenkiriSessions.set(from, {
             step: 'SELECTION',
             results: tkResults,
-            msgId: sentMsg.key.id,
+            options: [],
+            movieTitle: '',
             timestamp: Date.now()
         });
 
@@ -118,20 +114,19 @@ async (socket, msg, m, { from, body, isCmd }) => {
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
-        // Session Timeout (3 Minutes)
-        if (Date.now() - session.timestamp > 180000) {
+        if (Date.now() - session.timestamp > 300000) {
             global.thenkiriSessions.delete(from);
             return;
         }
 
         const selectedNum = parseInt(textMsg);
 
-        // STEP 1: MOVIE / TV SHOW SELECTION FROM SEARCH LIST
+        // STEP 1: MOVIE / TV SHOW SELECTION
         if (session.step === 'SELECTION') {
             const choiceIndex = selectedNum - 1;
             const tkResults = session.results;
 
-            if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
+            if (!tkResults || choiceIndex < 0 || choiceIndex >= tkResults.length) return;
 
             const selectedMovie = tkResults[choiceIndex];
             const statusMsg = await socket.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: msg });
@@ -191,25 +186,24 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             await socket.sendMessage(from, { text: "✅ *Details Fetched!*", edit: statusMsg.key });
 
-            let dlMsg;
             try {
-                dlMsg = await socket.sendMessage(from, {
+                await socket.sendMessage(from, {
                     image: { url: posterImg },
                     caption: captionText
                 }, { quoted: msg });
             } catch (imgErr) {
-                dlMsg = await socket.sendMessage(from, {
+                await socket.sendMessage(from, {
                     image: { url: DEFAULT_POSTER },
                     caption: captionText
                 }, { quoted: msg });
             }
 
-            // Update session state for Step 2
+            // UPDATE SESSION TO DOWNLOAD STEP WITH FRESH OPTIONS
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
+                results: [],
                 options: options,
                 movieTitle: title,
-                msgId: dlMsg.key.id,
                 timestamp: Date.now()
             });
         } 
@@ -218,7 +212,12 @@ async (socket, msg, m, { from, body, isCmd }) => {
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
             
-            // Delete session instantly so it will NOT overlap with next commands
+            if (!options || options.length === 0) {
+                global.thenkiriSessions.delete(from);
+                return;
+            }
+
+            // Clear session to prevent looping
             global.thenkiriSessions.delete(from);
 
             if (selectedNum === 0) {
@@ -274,7 +273,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
                             await socket.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
 
-                        } catch (fileErr) {
+                        } else (fileErr) {
                             await socket.sendMessage(from, {
                                 text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *Direct Send Failed (File > 2GB or Link Expired).*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                             }, { quoted: msg });
@@ -290,3 +289,4 @@ async (socket, msg, m, { from, body, isCmd }) => {
         console.error("Thenkiri Reply Listener Error:", err);
     }
 });
+,
