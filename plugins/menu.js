@@ -1,4 +1,4 @@
-const { readEnv } = require('../lib/database');
+Const { readEnv } = require('../lib/database');
 const { cmd, commands } = require('../command');
 const { runtime, sleep } = require('../lib/functions');
 const scraperThenkiri = require('liyanaarachchi-thenkiri-scrap');
@@ -10,10 +10,11 @@ const { exec } = require("child_process");
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
-// Global Active Sessions Maps
+// Global Active Sessions Maps & Message Deduplication Guard
 if (!global.menuSessions) global.menuSessions = new Map();
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
 if (!global.animeSessions) global.animeSessions = new Map();
+if (!global.processedMsgKeys) global.processedMsgKeys = new Set();
 
 function formatRAMUsage() {
     const used = process.memoryUsage().heapUsed / 1024 / 1024;
@@ -121,6 +122,14 @@ cmd({
 async (conn, mek, m, { from, body, isCmd }) => {
     try {
         if (isCmd) return;
+
+        // --- HARD ANTI-DUPLICATE GUARD ---
+        const msgKey = mek.key.id || (mek.key.remoteJid + "_" + mek.messageTimestamp);
+        if (global.processedMsgKeys.has(msgKey)) return;
+        global.processedMsgKeys.add(msgKey);
+
+        if (global.processedMsgKeys.size > 200) global.processedMsgKeys.clear();
+
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
@@ -139,6 +148,8 @@ async (conn, mek, m, { from, body, isCmd }) => {
             if (session.step === 'SELECTION') {
                 const animeResults = session.results;
                 if (choiceIndex < 0 || choiceIndex >= animeResults.length) return;
+
+                session.step = 'FETCHING'; // Lock state
 
                 const selectedAnime = animeResults[choiceIndex];
                 const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Anime Episodes...*` }, { quoted: mek });
@@ -180,6 +191,7 @@ async (conn, mek, m, { from, body, isCmd }) => {
 
             else if (session.step === 'DOWNLOAD') {
                 const episodes = session.episodes;
+                global.animeSessions.delete(from); // Clear immediately to prevent duplicates
 
                 if (choiceNum === 0) {
                     await conn.sendMessage(from, { text: `📦 *Downloading ALL (${episodes.length}) Anime Episodes... Please wait!*` }, { quoted: mek });
@@ -200,19 +212,9 @@ async (conn, mek, m, { from, body, isCmd }) => {
                                     caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
                                 }, { quoted: mek });
                             } catch (err1) {
-                                try {
-                                    const resBuffer = await axios.get(dlLink, { responseType: 'arraybuffer', timeout: 60000 });
-                                    await conn.sendMessage(from, {
-                                        document: Buffer.from(resBuffer.data),
-                                        mimetype: 'video/mp4',
-                                        fileName: safeFileName,
-                                        caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                } catch (err2) {
-                                    await conn.sendMessage(from, {
-                                        text: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                }
+                                await conn.sendMessage(from, {
+                                    text: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
+                                }, { quoted: mek });
                             }
                         }
                         if (sleep) await sleep(3000);
@@ -246,23 +248,11 @@ async (conn, mek, m, { from, body, isCmd }) => {
                     await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
 
                 } catch (fileErr) {
-                    try {
-                        const resBuffer = await axios.get(dlLink, { responseType: 'arraybuffer', timeout: 60000 });
-                        await conn.sendMessage(from, {
-                            document: Buffer.from(resBuffer.data),
-                            mimetype: 'video/mp4',
-                            fileName: safeFileName,
-                            caption: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n> ${FOOTER}`
-                        }, { quoted: mek });
+                    await conn.sendMessage(from, {
+                        text: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
+                    }, { quoted: mek });
 
-                        await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-                    } catch (bufferErr) {
-                        await conn.sendMessage(from, {
-                            text: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
-                        }, { quoted: mek });
-
-                        await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
-                    }
+                    await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
                 }
                 return;
             }
@@ -281,6 +271,8 @@ async (conn, mek, m, { from, body, isCmd }) => {
             if (session.step === 'SELECTION') {
                 const tkResults = session.results;
                 if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
+
+                session.step = 'FETCHING'; // Lock state
 
                 const selectedMovie = tkResults[choiceIndex];
                 const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: mek });
@@ -362,6 +354,7 @@ async (conn, mek, m, { from, body, isCmd }) => {
             // STEP 2: DOWNLOAD FILE / DIRECT LINK
             else if (session.step === 'DOWNLOAD') {
                 const options = session.options;
+                global.thenkiriSessions.delete(from); // Delete immediately to prevent duplicate triggering
 
                 if (choiceNum === 0) {
                     await conn.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: mek });
@@ -382,19 +375,9 @@ async (conn, mek, m, { from, body, isCmd }) => {
                                     caption: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`
                                 }, { quoted: mek });
                             } catch (err1) {
-                                try {
-                                    const resBuffer = await axios.get(finalDirectLink, { responseType: 'arraybuffer', timeout: 60000 });
-                                    await conn.sendMessage(from, {
-                                        document: Buffer.from(resBuffer.data),
-                                        mimetype: 'video/x-matroska',
-                                        fileName: safeFileName,
-                                        caption: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                } catch (err2) {
-                                    await conn.sendMessage(from, {
-                                        text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                }
+                                await conn.sendMessage(from, {
+                                    text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                                }, { quoted: mek });
                             }
                         }
                         if (sleep) await sleep(3000);
@@ -428,23 +411,11 @@ async (conn, mek, m, { from, body, isCmd }) => {
                     await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
 
                 } catch (fileErr) {
-                    try {
-                        const resBuffer = await axios.get(finalDirectLink, { responseType: 'arraybuffer', timeout: 60000 });
-                        await conn.sendMessage(from, {
-                            document: Buffer.from(resBuffer.data),
-                            mimetype: 'video/x-matroska',
-                            fileName: safeFileName,
-                            caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
-                        }, { quoted: mek });
+                    await conn.sendMessage(from, {
+                        text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                    }, { quoted: mek });
 
-                        await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-                    } catch (bufferErr) {
-                        await conn.sendMessage(from, {
-                            text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
-                        }, { quoted: mek });
-
-                        await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
-                    }
+                    await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
                 }
                 return;
             }
@@ -460,11 +431,9 @@ async (conn, mek, m, { from, body, isCmd }) => {
             const selectedCat = menuSession.categories[choiceIndex];
             let filteredCmds = [];
 
-            // 1. MOVIE CATEGORY -> Only show 'anime' and 'thenkiri'
             if (selectedCat.name === 'movie') {
                 filteredCmds = commands.filter(c => c.pattern === 'anime' || c.pattern === 'thenkiri');
             } 
-            // 2. DOWNLOAD CATEGORY -> Show normal download commands + anime & thenkiri next to each other
             else if (selectedCat.name === 'download') {
                 const otherDlCmds = commands.filter(c => c.category === 'download' && c.pattern !== 'anime' && c.pattern !== 'thenkiri' && !c.dontAddCommandList);
                 const animeCmd = commands.find(c => c.pattern === 'anime');
@@ -474,7 +443,6 @@ async (conn, mek, m, { from, body, isCmd }) => {
                 if (animeCmd) filteredCmds.push(animeCmd);
                 if (thenkiriCmd) filteredCmds.push(thenkiriCmd);
             } 
-            // 3. OTHER CATEGORIES
             else {
                 filteredCmds = commands.filter(c => c.category === selectedCat.name && !c.dontAddCommandList);
             }
