@@ -4,19 +4,19 @@ const axios = require('axios');
 
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
-const DEFAULT_POSTER = "https://files.catbox.moe/uqofdi.jpg";
 
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
-if (!global.processedMsgIds) global.processedMsgIds = new Set();
+if (!global.processedMessages) global.processedMessages = new Set();
 
 function cleanTitleForTMDB(rawTitle) {
     return rawTitle
         .split('|')[0]
-        .replace(/[\(\[\{].*?[\)\]\}]/g, '')
+        .replace(/\(.*?\)/g, '')
+        .replace(/\[.*?\]/g, '')
         .replace(/season\s*\d+/gi, '')
         .replace(/s\d+/gi, '')
-        .replace(/episodes?\s*\d+.*/gi, '')
-        .replace(/download|movie|tv|show|sinhala|sub|complete|added/gi, '')
+        .replace(/episodes?\s*\d+/gi, '')
+        .replace(/download|movie|tv|show|sinhala|sub|complete/gi, '')
         .replace(/[-_]/g, ' ')
         .trim();
 }
@@ -64,9 +64,6 @@ cmd({
     const searchQuery = args.join(' ');
 
     try {
-        // ALWAYS WIPE PREVIOUS SESSION COMPLETELY ON A NEW SEARCH COMMAND
-        global.thenkiriSessions.delete(from);
-
         const results = await scraperThenkiri.searchMovie(searchQuery);
 
         if (!results || results.length === 0) {
@@ -85,12 +82,9 @@ cmd({
 
         await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        // SET FRESH SELECTION SESSION
         global.thenkiriSessions.set(from, {
             step: 'SELECTION',
             results: tkResults,
-            options: [],
-            movieTitle: '',
             timestamp: Date.now()
         });
 
@@ -108,14 +102,20 @@ async (socket, msg, m, { from, body, isCmd }) => {
         if (isCmd) return;
         if (!global.thenkiriSessions.has(from)) return;
 
-        const msgId = msg.key.id;
-        if (global.processedMsgIds.has(msgId)) return;
-        global.processedMsgIds.add(msgId);
-        if (global.processedMsgIds.size > 100) global.processedMsgIds.clear();
+        // HARD FIX FOR DOUBLE TRIGGER: Unique Message Key
+        const uniqueMsgKey = `${msg.key.remoteJid}_${msg.key.id}`;
+        if (global.processedMessages.has(uniqueMsgKey)) return;
+        global.processedMessages.add(uniqueMsgKey);
 
-        const session = global.thenkiriSessions.get(from);
+        // Keep memory low
+        if (global.processedMessages.size > 200) {
+            global.processedMessages.clear();
+        }
+
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
+
+        const session = global.thenkiriSessions.get(from);
 
         if (Date.now() - session.timestamp > 300000) {
             global.thenkiriSessions.delete(from);
@@ -129,7 +129,10 @@ async (socket, msg, m, { from, body, isCmd }) => {
             const choiceIndex = selectedNum - 1;
             const tkResults = session.results;
 
-            if (!tkResults || choiceIndex < 0 || choiceIndex >= tkResults.length) return;
+            if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
+
+            // Change state instantly to block secondary triggers
+            session.step = 'FETCHING';
 
             const selectedMovie = tkResults[choiceIndex];
             const statusMsg = await socket.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: msg });
@@ -166,7 +169,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             const posterImg = tmdbData?.poster_path
                 ? `https://image.tmdb.org/t/p/w780${tmdbData.poster_path}`
-                : (selectedMovie.img || DEFAULT_POSTER);
+                : (selectedMovie.img || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500");
 
             let captionText = `🎬 *${title}* ${year ? `(${year})` : ''}\n\n`;
             captionText += `⭐ *Rating:* ${rating}\n`;
@@ -189,22 +192,13 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             await socket.sendMessage(from, { text: "✅ *Details Fetched!*", edit: statusMsg.key });
 
-            try {
-                await socket.sendMessage(from, {
-                    image: { url: posterImg },
-                    caption: captionText
-                }, { quoted: msg });
-            } catch (imgErr) {
-                await socket.sendMessage(from, {
-                    image: { url: DEFAULT_POSTER },
-                    caption: captionText
-                }, { quoted: msg });
-            }
+            await socket.sendMessage(from, {
+                image: { url: posterImg },
+                caption: captionText
+            }, { quoted: msg });
 
-            // UPDATE SESSION TO DOWNLOAD STEP
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
-                results: [],
                 options: options,
                 movieTitle: title,
                 timestamp: Date.now()
@@ -215,14 +209,10 @@ async (socket, msg, m, { from, body, isCmd }) => {
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
             
-            if (!options || options.length === 0) {
-                global.thenkiriSessions.delete(from);
-                return;
-            }
-
-            // Clear session immediately to prevent looping
+            // Instantly delete session so no duplicate execution can happen
             global.thenkiriSessions.delete(from);
 
+            // OPTION 0: AUTO DOWNLOAD ALL EPISODES
             if (selectedNum === 0) {
                 await socket.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: msg });
 
@@ -251,6 +241,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 }
                 await socket.sendMessage(from, { text: `✅ *ALL (${options.length}) Files Processed!*` }, { quoted: msg });
             } 
+            // INDIVIDUAL EPISODE SELECTION
             else {
                 const choiceIndex = selectedNum - 1;
                 if (choiceIndex >= 0 && choiceIndex < options.length) {
