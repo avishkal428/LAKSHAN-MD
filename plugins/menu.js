@@ -10,10 +10,10 @@ const { exec } = require("child_process");
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
-// Global Active Sessions Maps
 if (!global.menuSessions) global.menuSessions = new Map();
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
 if (!global.animeSessions) global.animeSessions = new Map();
+if (!global.processedMsgKeys) global.processedMsgKeys = new Set();
 
 function formatRAMUsage() {
     const used = process.memoryUsage().heapUsed / 1024 / 1024;
@@ -21,7 +21,16 @@ function formatRAMUsage() {
     return `${used.toFixed(2)} MB / ${total.toFixed(0)} MB`;
 }
 
-// Helper: Fetch TMDB Details
+function getSessionKey(from, sender) {
+    return `${from}_${sender}`;
+}
+
+function clearUserSessions(sessionKey) {
+    global.menuSessions.delete(sessionKey);
+    global.thenkiriSessions.delete(sessionKey);
+    global.animeSessions.delete(sessionKey);
+}
+
 async function fetchMediaDetails(cleanTitle) {
     try {
         let searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(cleanTitle)}`;
@@ -50,7 +59,7 @@ async function fetchMediaDetails(cleanTitle) {
 }
 
 // ==========================================
-// 1. INTERACTIVE MENU COMMAND
+// 1. MENU COMMAND
 // ==========================================
 cmd({
     pattern: 'menu',
@@ -61,8 +70,10 @@ cmd({
 },
 async (conn, mek, m, { from, pushname = 'User', sender }) => {
     try {
-        const config = await readEnv();
+        const sessionKey = getSessionKey(from, sender);
+        clearUserSessions(sessionKey);
 
+        const config = await readEnv();
         const categories = [
             { title: 'Main',     name: 'main',     emoji: '🏆' },
             { title: 'Owner',    name: 'owner',    emoji: '👑' },
@@ -99,269 +110,146 @@ ${categories.map((cat, i) => `┃ ${i + 1} ${cat.emoji} ${cat.title}`).join('\n'
             contextInfo: { mentionedJid: [sender] }
         }, { quoted: mek });
 
-        global.menuSessions.set(from, {
-            msgId: sentMsg.key.id,
-            sender,
+        global.menuSessions.set(sessionKey, {
+            targetMsgId: sentMsg.key.id,
             categories,
             timestamp: Date.now()
         });
 
     } catch (e) {
-        console.error('Menu Command Error:', e);
         await conn.sendMessage(from, { text: '❌ Failed to load main menu.' }, { quoted: mek });
     }
 });
 
 // ==========================================
-// 2. GLOBAL REPLY LISTENER (MENU + MOVIES + ANIME)
+// 2. STRICT REPLY LISTENER
 // ==========================================
 cmd({
     on: "body"
 },
-async (conn, mek, m, { from, body, isCmd }) => {
+async (conn, mek, m, { from, body, isCmd, sender }) => {
     try {
         if (isCmd) return;
+
+        const msgKey = mek.key.id || (from + "_" + mek.messageTimestamp);
+        if (global.processedMsgKeys.has(msgKey)) return;
+        global.processedMsgKeys.add(msgKey);
+        if (global.processedMsgKeys.size > 200) global.processedMsgKeys.clear();
+
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
         const choiceNum = parseInt(textMsg);
         const choiceIndex = choiceNum - 1;
+        const sessionKey = getSessionKey(from, sender);
 
-        // --- HANDLE ANIME REPLIES ---
-        if (global.animeSessions.has(from)) {
-            const session = global.animeSessions.get(from);
+        // GET QUOTED MESSAGE ID TO MATCH STRICTLY
+        const quotedMsg = mek.message?.extendedTextMessage?.contextInfo;
+        const quotedId = quotedMsg?.stanzaId;
 
-            if (Date.now() - session.timestamp > 300000) {
-                global.animeSessions.delete(from);
-                return;
-            }
-
-            if (session.step === 'SELECTION') {
-                const animeResults = session.results;
-                if (choiceIndex < 0 || choiceIndex >= animeResults.length) return;
-
-                const selectedAnime = animeResults[choiceIndex];
-                const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Anime Episodes...*` }, { quoted: mek });
-
-                const episodes = await scraperAnime.getEpisodes(selectedAnime.link);
-
-                if (!episodes || episodes.length === 0) {
-                    await conn.sendMessage(from, { text: `❌ No episodes found for this anime.` }, { quoted: mek });
-                    global.animeSessions.delete(from);
-                    return;
-                }
-
-                let captionText = `⛩️ *${selectedAnime.title}* ⛩️\n\n`;
-                captionText += `📥 *Select Episode to Download:*\n\n`;
-                captionText += `*0.* 📦 *ALL EPISODES (AUTO DOWNLOAD ALL)*\n\n`;
-
-                episodes.forEach((ep, idx) => {
-                    const epName = ep.title || ep.name || `Episode ${idx + 1}`;
-                    captionText += `*${idx + 1}.* ${epName}\n`;
-                });
-
-                captionText += `\n> ${FOOTER}`;
-
-                await conn.sendMessage(from, { text: "✅ *Episodes Fetched!*", edit: statusMsg.key });
-
-                await conn.sendMessage(from, {
-                    image: { url: selectedAnime.img || 'https://files.catbox.moe/uqofdi.jpg' },
-                    caption: captionText
-                }, { quoted: mek });
-
-                global.animeSessions.set(from, {
-                    step: 'DOWNLOAD',
-                    episodes: episodes,
-                    animeTitle: selectedAnime.title,
-                    timestamp: Date.now()
-                });
-                return;
-            }
-
-            else if (session.step === 'DOWNLOAD') {
-                const episodes = session.episodes;
-
-                if (choiceNum === 0) {
-                    await conn.sendMessage(from, { text: `📦 *Downloading ALL (${episodes.length}) Anime Episodes... Please wait!*` }, { quoted: mek });
-
-                    for (let i = 0; i < episodes.length; i++) {
-                        const ep = episodes[i];
-                        const epName = ep.title || ep.name || `Episode ${i + 1}`;
-                        const dlLink = await scraperAnime.getDownloadLink(ep.link);
-
-                        if (dlLink) {
-                            const safeFileName = `${session.animeTitle.replace(/[/\\?%*:|"<>]/g, "")}_${epName.replace(/\s+/g, '_')}.mp4`;
-
-                            try {
-                                await conn.sendMessage(from, {
-                                    document: { url: dlLink },
-                                    mimetype: 'video/mp4',
-                                    fileName: safeFileName,
-                                    caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
-                                }, { quoted: mek });
-                            } catch (err1) {
-                                try {
-                                    const resBuffer = await axios.get(dlLink, { responseType: 'arraybuffer', timeout: 60000 });
-                                    await conn.sendMessage(from, {
-                                        document: Buffer.from(resBuffer.data),
-                                        mimetype: 'video/mp4',
-                                        fileName: safeFileName,
-                                        caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                } catch (err2) {
-                                    await conn.sendMessage(from, {
-                                        text: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                }
-                            }
-                        }
-                        if (sleep) await sleep(3000);
-                    }
-                    return;
-                }
-
-                if (choiceIndex < 0 || choiceIndex >= episodes.length) return;
-
-                const selectedEp = episodes[choiceIndex];
-                const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading Anime Episode...*` }, { quoted: mek });
-
-                const dlLink = await scraperAnime.getDownloadLink(selectedEp.link);
-
-                if (!dlLink) {
-                    await conn.sendMessage(from, { text: `❌ Download link fetch failed.`, edit: dlStatusMsg.key });
-                    return;
-                }
-
-                const epName = selectedEp.title || selectedEp.name || 'Episode';
-                const safeFileName = `${session.animeTitle.replace(/[/\\?%*:|"<>]/g, "")}_${epName.replace(/\s+/g, '_')}.mp4`;
-
-                try {
-                    await conn.sendMessage(from, {
-                        document: { url: dlLink },
-                        mimetype: 'video/mp4',
-                        fileName: safeFileName,
-                        caption: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n> ${FOOTER}`
-                    }, { quoted: mek });
-
-                    await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-
-                } catch (fileErr) {
-                    try {
-                        const resBuffer = await axios.get(dlLink, { responseType: 'arraybuffer', timeout: 60000 });
-                        await conn.sendMessage(from, {
-                            document: Buffer.from(resBuffer.data),
-                            mimetype: 'video/mp4',
-                            fileName: safeFileName,
-                            caption: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n> ${FOOTER}`
-                        }, { quoted: mek });
-
-                        await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-                    } catch (bufferErr) {
-                        await conn.sendMessage(from, {
-                            text: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
-                        }, { quoted: mek });
-
-                        await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
-                    }
-                }
-                return;
-            }
-        }
-
-        // --- HANDLE THENKIRI MOVIE/TV REPLIES ---
-        if (global.thenkiriSessions.has(from)) {
-            const session = global.thenkiriSessions.get(from);
+        // --- ROUTE 1: THENKIRI ---
+        if (global.thenkiriSessions.has(sessionKey)) {
+            const session = global.thenkiriSessions.get(sessionKey);
 
             if (Date.now() - session.timestamp > 300000) {
-                global.thenkiriSessions.delete(from);
+                global.thenkiriSessions.delete(sessionKey);
                 return;
             }
 
-            // STEP 1: MOVIE / TV SELECTION
+            // IF REPLY DOES NOT MATCH EXACT BOT MESSAGE ID, IGNORE!
+            if (quotedId && quotedId !== session.targetMsgId) return;
+
+            // STEP 1: SELECTION
             if (session.step === 'SELECTION') {
                 const tkResults = session.results;
-                if (choiceIndex < 0 || choiceIndex >= tkResults.length) return;
+                if (choiceIndex >= 0 && choiceIndex < tkResults.length) {
+                    
+                    // PURGE CURRENT SESSION FIRST
+                    global.thenkiriSessions.delete(sessionKey);
 
-                const selectedMovie = tkResults[choiceIndex];
-                const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: mek });
+                    const selectedMovie = tkResults[choiceIndex];
+                    const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Details & Poster...*` }, { quoted: mek });
 
-                const options = await scraperThenkiri.getDownloadOptions(selectedMovie.link);
+                    const options = await scraperThenkiri.getDownloadOptions(selectedMovie.link);
 
-                if (!options || options.length === 0) {
-                    await conn.sendMessage(from, { text: `❌ No download links found.` }, { quoted: mek });
-                    global.thenkiriSessions.delete(from);
-                    return;
+                    if (!options || options.length === 0) {
+                        await conn.sendMessage(from, { text: `❌ No download links found.` }, { quoted: mek });
+                        return;
+                    }
+
+                    let cleanTitle = selectedMovie.title
+                        .split('|')[0]
+                        .replace(/\(\d{4}\)/g, '')
+                        .replace(/season\s*\d+/gi, '')
+                        .replace(/s\d+/gi, '')
+                        .replace(/download|movie|tv|show|sinhala|sub/gi, '')
+                        .trim();
+
+                    const tmdbRes = await fetchMediaDetails(cleanTitle);
+                    const tmdbData = tmdbRes ? tmdbRes.data : null;
+                    const isTv = tmdbRes ? tmdbRes.type === 'tv' : false;
+
+                    const title = (isTv ? tmdbData?.name : tmdbData?.title) || cleanTitle;
+                    const releaseDate = (isTv ? tmdbData?.first_air_date : tmdbData?.release_date) || 'N/A';
+                    const year = releaseDate !== 'N/A' ? releaseDate.split('-')[0] : '';
+                    const rating = tmdbData?.vote_average ? `${tmdbData.vote_average.toFixed(1)} / 10` : 'N/A';
+                    const language = tmdbData?.original_language ? tmdbData.original_language.toUpperCase() : 'English';
+                    const genres = tmdbData?.genres ? tmdbData.genres.map(g => g.name).join(', ') : 'Action, Drama';
+
+                    const cast = tmdbData?.credits?.cast 
+                        ? tmdbData.credits.cast.slice(0, 3).map(c => `• ${c.name} as ${c.character}`).join('\n') 
+                        : '• N/A';
+
+                    const plot = tmdbData?.overview || 'No plot available.';
+                    const trailerObj = tmdbData?.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+                    const trailerLink = trailerObj ? `https://youtu.be/${trailerObj.key}` : 'N/A';
+
+                    const posterImg = tmdbData?.poster_path 
+                        ? `https://image.tmdb.org/t/p/w780${tmdbData.poster_path}`
+                        : (selectedMovie.img || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500");
+
+                    let captionText = `🎬 *${title}* ${year ? `(${year})` : ''}\n\n`;
+                    captionText += `⭐ *Rating:* ${rating}\n`;
+                    captionText += `📅 *Release Date:* ${releaseDate}\n`;
+                    captionText += `🌐 *Language:* ${language}\n\n`;
+                    captionText += `🎭 *Genres:* ${genres}\n\n`;
+                    captionText += `👥 *Cast:*\n${cast}\n\n`;
+                    captionText += `📖 *Plot:* ${plot}\n\n`;
+                    captionText += `🎬 *Trailer:* ${trailerLink}\n`;
+                    captionText += `----------------------------------------\n\n`;
+                    captionText += `📥 *Select Quality / Episode to Download:*\n\n`;
+                    captionText += `*0.* 📦 *ALL EPISODES / QUALITIES (AUTO DOWNLOAD ALL)*\n\n`;
+
+                    options.forEach((opt, idx) => {
+                        const qName = opt.quality || opt.name || `Episode ${idx + 1}`;
+                        captionText += `*${idx + 1}.* ${qName}\n`;
+                    });
+
+                    captionText += `\n> ${FOOTER}`;
+
+                    await conn.sendMessage(from, { text: "✅ *Details Fetched!*", edit: statusMsg.key });
+
+                    const sentDlMsg = await conn.sendMessage(from, {
+                        image: { url: posterImg },
+                        caption: captionText
+                    }, { quoted: mek });
+
+                    // SET NEW STEP "DOWNLOAD" WITH NEW TARGET MESSAGE ID
+                    global.thenkiriSessions.set(sessionKey, {
+                        step: 'DOWNLOAD',
+                        targetMsgId: sentDlMsg.key.id,
+                        options: options,
+                        movieTitle: title,
+                        timestamp: Date.now()
+                    });
                 }
-
-                let cleanTitle = selectedMovie.title
-                    .split('|')[0]
-                    .replace(/\(\d{4}\)/g, '')
-                    .replace(/season\s*\d+/gi, '')
-                    .replace(/s\d+/gi, '')
-                    .replace(/download|movie|tv|show|sinhala|sub/gi, '')
-                    .trim();
-
-                const tmdbRes = await fetchMediaDetails(cleanTitle);
-                const tmdbData = tmdbRes ? tmdbRes.data : null;
-                const isTv = tmdbRes ? tmdbRes.type === 'tv' : false;
-
-                const title = (isTv ? tmdbData?.name : tmdbData?.title) || cleanTitle;
-                const releaseDate = (isTv ? tmdbData?.first_air_date : tmdbData?.release_date) || 'N/A';
-                const year = releaseDate !== 'N/A' ? releaseDate.split('-')[0] : '';
-                const rating = tmdbData?.vote_average ? `${tmdbData.vote_average.toFixed(1)} / 10` : 'N/A';
-                const language = tmdbData?.original_language ? tmdbData.original_language.toUpperCase() : 'English';
-                const genres = tmdbData?.genres ? tmdbData.genres.map(g => g.name).join(', ') : 'Action, Drama';
-
-                const cast = tmdbData?.credits?.cast 
-                    ? tmdbData.credits.cast.slice(0, 3).map(c => `• ${c.name} as ${c.character}`).join('\n') 
-                    : '• N/A';
-
-                const plot = tmdbData?.overview || 'No plot available.';
-                const trailerObj = tmdbData?.videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
-                const trailerLink = trailerObj ? `https://youtu.be/${trailerObj.key}` : 'N/A';
-
-                const posterImg = tmdbData?.poster_path 
-                    ? `https://image.tmdb.org/t/p/w780${tmdbData.poster_path}`
-                    : (selectedMovie.img || "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500");
-
-                let captionText = `🎬 *${title}* ${year ? `(${year})` : ''}\n\n`;
-                captionText += `⭐ *Rating:* ${rating}\n`;
-                captionText += `📅 *Release Date:* ${releaseDate}\n`;
-                captionText += `🌐 *Language:* ${language}\n\n`;
-                captionText += `🎭 *Genres:* ${genres}\n\n`;
-                captionText += `👥 *Cast:*\n${cast}\n\n`;
-                captionText += `📖 *Plot:* ${plot}\n\n`;
-                captionText += `🎬 *Trailer:* ${trailerLink}\n`;
-                captionText += `----------------------------------------\n\n`;
-                captionText += `📥 *Select Quality / Episode to Download:*\n\n`;
-                captionText += `*0.* 📦 *ALL EPISODES / QUALITIES (AUTO DOWNLOAD ALL)*\n\n`;
-
-                options.forEach((opt, idx) => {
-                    const qName = opt.quality || opt.name || `Episode ${idx + 1}`;
-                    captionText += `*${idx + 1}.* ${qName}\n`;
-                });
-
-                captionText += `\n> ${FOOTER}`;
-
-                await conn.sendMessage(from, { text: "✅ *Details Fetched!*", edit: statusMsg.key });
-
-                await conn.sendMessage(from, {
-                    image: { url: posterImg },
-                    caption: captionText
-                }, { quoted: mek });
-
-                global.thenkiriSessions.set(from, {
-                    step: 'DOWNLOAD',
-                    options: options,
-                    movieTitle: title,
-                    timestamp: Date.now()
-                });
                 return;
             }
 
-            // STEP 2: DOWNLOAD FILE / DIRECT LINK
-            else if (session.step === 'DOWNLOAD') {
+            // STEP 2: DOWNLOAD
+            if (session.step === 'DOWNLOAD') {
                 const options = session.options;
+                global.thenkiriSessions.delete(sessionKey);
 
                 if (choiceNum === 0) {
                     await conn.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: mek });
@@ -382,19 +270,9 @@ async (conn, mek, m, { from, body, isCmd }) => {
                                     caption: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`
                                 }, { quoted: mek });
                             } catch (err1) {
-                                try {
-                                    const resBuffer = await axios.get(finalDirectLink, { responseType: 'arraybuffer', timeout: 60000 });
-                                    await conn.sendMessage(from, {
-                                        document: Buffer.from(resBuffer.data),
-                                        mimetype: 'video/x-matroska',
-                                        fileName: safeFileName,
-                                        caption: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                } catch (err2) {
-                                    await conn.sendMessage(from, {
-                                        text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
-                                    }, { quoted: mek });
-                                }
+                                await conn.sendMessage(from, {
+                                    text: `🍿 *${session.movieTitle}*\n📌 *Item (${i + 1}/${options.length}):* ${qName}\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
+                                }, { quoted: mek });
                             }
                         }
                         if (sleep) await sleep(3000);
@@ -402,86 +280,202 @@ async (conn, mek, m, { from, body, isCmd }) => {
                     return;
                 }
 
-                if (choiceIndex < 0 || choiceIndex >= options.length) return;
+                if (choiceIndex >= 0 && choiceIndex < options.length) {
+                    const selectedOption = options[choiceIndex];
+                    const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading & Uploading File...*` }, { quoted: mek });
 
-                const selectedOption = options[choiceIndex];
-                const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: mek });
+                    const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
 
-                const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
+                    if (!finalDirectLink) {
+                        await conn.sendMessage(from, { text: `❌ Link bypass failed.`, edit: dlStatusMsg.key });
+                        return;
+                    }
 
-                if (!finalDirectLink) {
-                    await conn.sendMessage(from, { text: `❌ Link bypass failed.`, edit: dlStatusMsg.key });
-                    return;
-                }
+                    const qName = selectedOption.quality || selectedOption.name || 'Download File';
+                    const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
 
-                const qName = selectedOption.quality || selectedOption.name || 'Download File';
-                const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
-
-                try {
-                    await conn.sendMessage(from, {
-                        document: { url: finalDirectLink },
-                        mimetype: 'video/x-matroska',
-                        fileName: safeFileName,
-                        caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
-                    }, { quoted: mek });
-
-                    await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-
-                } catch (fileErr) {
                     try {
-                        const resBuffer = await axios.get(finalDirectLink, { responseType: 'arraybuffer', timeout: 60000 });
                         await conn.sendMessage(from, {
-                            document: Buffer.from(resBuffer.data),
+                            document: { url: finalDirectLink },
                             mimetype: 'video/x-matroska',
                             fileName: safeFileName,
                             caption: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`
                         }, { quoted: mek });
 
                         await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
-                    } catch (bufferErr) {
+
+                    } catch (fileErr) {
                         await conn.sendMessage(from, {
                             text: `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${finalDirectLink}\n\n> ${FOOTER}`
                         }, { quoted: mek });
 
                         await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
                     }
+                    return;
                 }
-                return;
             }
         }
 
-        // --- HANDLE MAIN MENU REPLIES ---
-        if (global.menuSessions.has(from)) {
-            const menuSession = global.menuSessions.get(from);
-            const config = await readEnv();
+        // --- ROUTE 2: ANIME ---
+        if (global.animeSessions.has(sessionKey)) {
+            const session = global.animeSessions.get(sessionKey);
 
-            if (choiceIndex < 0 || choiceIndex >= menuSession.categories.length) return;
-
-            const selectedCat = menuSession.categories[choiceIndex];
-            let filteredCmds = [];
-
-            // 1. MOVIE CATEGORY -> Only show 'anime' and 'thenkiri'
-            if (selectedCat.name === 'movie') {
-                filteredCmds = commands.filter(c => c.pattern === 'anime' || c.pattern === 'thenkiri');
-            } 
-            // 2. DOWNLOAD CATEGORY -> Show normal download commands + anime & thenkiri next to each other
-            else if (selectedCat.name === 'download') {
-                const otherDlCmds = commands.filter(c => c.category === 'download' && c.pattern !== 'anime' && c.pattern !== 'thenkiri' && !c.dontAddCommandList);
-                const animeCmd = commands.find(c => c.pattern === 'anime');
-                const thenkiriCmd = commands.find(c => c.pattern === 'thenkiri');
-
-                filteredCmds = [...otherDlCmds];
-                if (animeCmd) filteredCmds.push(animeCmd);
-                if (thenkiriCmd) filteredCmds.push(thenkiriCmd);
-            } 
-            // 3. OTHER CATEGORIES
-            else {
-                filteredCmds = commands.filter(c => c.category === selectedCat.name && !c.dontAddCommandList);
+            if (Date.now() - session.timestamp > 300000) {
+                global.animeSessions.delete(sessionKey);
+                return;
             }
 
-            const uniqueCmds = Array.from(new Map(filteredCmds.map(item => [item['pattern'], item])).values());
+            if (quotedId && quotedId !== session.targetMsgId) return;
 
-            const subMenu = `
+            if (session.step === 'SELECTION') {
+                const animeResults = session.results;
+                if (choiceIndex >= 0 && choiceIndex < animeResults.length) {
+                    global.animeSessions.delete(sessionKey);
+
+                    const selectedAnime = animeResults[choiceIndex];
+                    const statusMsg = await conn.sendMessage(from, { text: `⏳ *Fetching Anime Episodes...*` }, { quoted: mek });
+
+                    const episodes = await scraperAnime.getEpisodes(selectedAnime.link);
+
+                    if (!episodes || episodes.length === 0) {
+                        await conn.sendMessage(from, { text: `❌ No episodes found for this anime.` }, { quoted: mek });
+                        return;
+                    }
+
+                    let captionText = `⛩️ *${selectedAnime.title}* ⛩️\n\n`;
+                    captionText += `📥 *Select Episode to Download:*\n\n`;
+                    captionText += `*0.* 📦 *ALL EPISODES (AUTO DOWNLOAD ALL)*\n\n`;
+
+                    episodes.forEach((ep, idx) => {
+                        const epName = ep.title || ep.name || `Episode ${idx + 1}`;
+                        captionText += `*${idx + 1}.* ${epName}\n`;
+                    });
+
+                    captionText += `\n> ${FOOTER}`;
+
+                    await conn.sendMessage(from, { text: "✅ *Episodes Fetched!*", edit: statusMsg.key });
+
+                    const sentAnimeDl = await conn.sendMessage(from, {
+                        image: { url: selectedAnime.img || 'https://files.catbox.moe/uqofdi.jpg' },
+                        caption: captionText
+                    }, { quoted: mek });
+
+                    global.animeSessions.set(sessionKey, {
+                        step: 'DOWNLOAD',
+                        targetMsgId: sentAnimeDl.key.id,
+                        episodes: episodes,
+                        animeTitle: selectedAnime.title,
+                        timestamp: Date.now()
+                    });
+                }
+                return;
+            }
+
+            if (session.step === 'DOWNLOAD') {
+                const episodes = session.episodes;
+                global.animeSessions.delete(sessionKey);
+
+                if (choiceNum === 0) {
+                    await conn.sendMessage(from, { text: `📦 *Downloading ALL (${episodes.length}) Anime Episodes... Please wait!*` }, { quoted: mek });
+
+                    for (let i = 0; i < episodes.length; i++) {
+                        const ep = episodes[i];
+                        const epName = ep.title || ep.name || `Episode ${i + 1}`;
+                        const dlLink = await scraperAnime.getDownloadLink(ep.link);
+
+                        if (dlLink) {
+                            const safeFileName = `${session.animeTitle.replace(/[/\\?%*:|"<>]/g, "")}_${epName.replace(/\s+/g, '_')}.mp4`;
+
+                            try {
+                                await conn.sendMessage(from, {
+                                    document: { url: dlLink },
+                                    mimetype: 'video/mp4',
+                                    fileName: safeFileName,
+                                    caption: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n> ${FOOTER}`
+                                }, { quoted: mek });
+                            } catch (err1) {
+                                await conn.sendMessage(from, {
+                                    text: `⛩️ *${session.animeTitle}*\n📌 *Item (${i + 1}/${episodes.length}):* ${epName}\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
+                                }, { quoted: mek });
+                            }
+                        }
+                        if (sleep) await sleep(3000);
+                    }
+                    return;
+                }
+
+                if (choiceIndex >= 0 && choiceIndex < episodes.length) {
+                    const selectedEp = episodes[choiceIndex];
+                    const dlStatusMsg = await conn.sendMessage(from, { text: `⚡ *Downloading Anime Episode...*` }, { quoted: mek });
+
+                    const dlLink = await scraperAnime.getDownloadLink(selectedEp.link);
+
+                    if (!dlLink) {
+                        await conn.sendMessage(from, { text: `❌ Download link fetch failed.`, edit: dlStatusMsg.key });
+                        return;
+                    }
+
+                    const epName = selectedEp.title || selectedEp.name || 'Episode';
+                    const safeFileName = `${session.animeTitle.replace(/[/\\?%*:|"<>]/g, "")}_${epName.replace(/\s+/g, '_')}.mp4`;
+
+                    try {
+                        await conn.sendMessage(from, {
+                            document: { url: dlLink },
+                            mimetype: 'video/mp4',
+                            fileName: safeFileName,
+                            caption: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n> ${FOOTER}`
+                        }, { quoted: mek });
+
+                        await conn.sendMessage(from, { text: "✅ *Upload Successful*", edit: dlStatusMsg.key });
+
+                    } catch (fileErr) {
+                        await conn.sendMessage(from, {
+                            text: `⛩️ *${session.animeTitle}*\n📌 *Episode:* ${epName}\n\n⚠️ *File size exceeds limit or upload timeout.*\n\n🔗 *Direct Download Link:*\n${dlLink}\n\n> ${FOOTER}`
+                        }, { quoted: mek });
+
+                        await conn.sendMessage(from, { text: "✅ *Direct Link Sent*", edit: dlStatusMsg.key });
+                    }
+                    return;
+                }
+            }
+        }
+
+        // --- ROUTE 3: MENU ---
+        if (global.menuSessions.has(sessionKey)) {
+            const menuSession = global.menuSessions.get(sessionKey);
+
+            if (Date.now() - menuSession.timestamp > 300000) {
+                global.menuSessions.delete(sessionKey);
+                return;
+            }
+
+            if (quotedId && quotedId !== menuSession.targetMsgId) return;
+
+            if (choiceIndex >= 0 && choiceIndex < menuSession.categories.length) {
+                global.menuSessions.delete(sessionKey);
+                const config = await readEnv();
+                const selectedCat = menuSession.categories[choiceIndex];
+                let filteredCmds = [];
+
+                if (selectedCat.name === 'movie') {
+                    filteredCmds = commands.filter(c => c.pattern === 'anime' || c.pattern === 'thenkiri');
+                } 
+                else if (selectedCat.name === 'download') {
+                    const otherDlCmds = commands.filter(c => c.category === 'download' && c.pattern !== 'anime' && c.pattern !== 'thenkiri' && !c.dontAddCommandList);
+                    const animeCmd = commands.find(c => c.pattern === 'anime');
+                    const thenkiriCmd = commands.find(c => c.pattern === 'thenkiri');
+
+                    filteredCmds = [...otherDlCmds];
+                    if (animeCmd) filteredCmds.push(animeCmd);
+                    if (thenkiriCmd) filteredCmds.push(thenkiriCmd);
+                } 
+                else {
+                    filteredCmds = commands.filter(c => c.category === selectedCat.name && !c.dontAddCommandList);
+                }
+
+                const uniqueCmds = Array.from(new Map(filteredCmds.map(item => [item['pattern'], item])).values());
+
+                const subMenu = `
 ━━━━━━━━━━━━━━━━━━
 *╭─「 ${selectedCat.emoji} ${selectedCat.title} Commands 」*
 *│📚 Total Commands:* ${uniqueCmds.length}
@@ -495,10 +489,11 @@ ${uniqueCmds.length > 0
 *${FOOTER}*
 `.trim();
 
-            await conn.sendMessage(from, {
-                image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/uqofdi.jpg' },
-                caption: subMenu
-            }, { quoted: mek });
+                await conn.sendMessage(from, {
+                    image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/uqofdi.jpg' },
+                    caption: subMenu
+                }, { quoted: mek });
+            }
         }
 
     } catch (err) {
@@ -507,7 +502,7 @@ ${uniqueCmds.length > 0
 });
 
 // ==========================================
-// 3. MOVIE & TV SHOW COMMAND (THENKIRI)
+// 3. THENKIRI COMMAND
 // ==========================================
 cmd({
     pattern: "thenkiri",
@@ -515,10 +510,13 @@ cmd({
     desc: "Searches movies & TV series from Thenkiri",
     category: "movie",
     filename: __filename
-}, async (socket, msg, m, { from, args }) => {
+}, async (socket, msg, m, { from, args, sender }) => {
     if (!args || args.length === 0) {
         return socket.sendMessage(from, { text: "⚠️ Please enter a movie or TV show name!" }, { quoted: msg });
     }
+
+    const sessionKey = getSessionKey(from, sender);
+    clearUserSessions(sessionKey);
 
     const searchQuery = args.join(' ');
 
@@ -539,10 +537,11 @@ cmd({
 
         listText += `\n> ${FOOTER}`;
 
-        await socket.sendMessage(from, { text: listText }, { quoted: msg });
+        const sentSearchMsg = await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        global.thenkiriSessions.set(from, {
+        global.thenkiriSessions.set(sessionKey, {
             step: 'SELECTION',
+            targetMsgId: sentSearchMsg.key.id,
             results: tkResults,
             timestamp: Date.now()
         });
@@ -553,7 +552,7 @@ cmd({
 });
 
 // ==========================================
-// 4. ANIME COMMAND (ANIMEHEAVEN)
+// 4. ANIME COMMAND
 // ==========================================
 cmd({
     pattern: "anime",
@@ -561,10 +560,13 @@ cmd({
     desc: "Searches anime from AnimeHeaven",
     category: "movie",
     filename: __filename
-}, async (socket, msg, m, { from, args }) => {
+}, async (socket, msg, m, { from, args, sender }) => {
     if (!args || args.length === 0) {
         return socket.sendMessage(from, { text: "⚠️ Please enter an anime name!" }, { quoted: msg });
     }
+
+    const sessionKey = getSessionKey(from, sender);
+    clearUserSessions(sessionKey);
 
     const searchQuery = args.join(' ');
 
@@ -585,10 +587,11 @@ cmd({
 
         listText += `\n> ${FOOTER}`;
 
-        await socket.sendMessage(from, { text: listText }, { quoted: msg });
+        const sentAnimeSearchMsg = await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
-        global.animeSessions.set(from, {
+        global.animeSessions.set(sessionKey, {
             step: 'SELECTION',
+            targetMsgId: sentAnimeSearchMsg.key.id,
             results: animeResults,
             timestamp: Date.now()
         });
@@ -599,7 +602,7 @@ cmd({
 });
 
 // ==========================================
-// 5. SYSTEM & OTHER COMMANDS
+// 5. SYSTEM COMMANDS
 // ==========================================
 cmd({
     pattern: "system",
