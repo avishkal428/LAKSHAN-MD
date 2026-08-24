@@ -6,9 +6,8 @@ const axios = require('axios');
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
-// Memory storage for user sessions
-if (!global.searchListSessions) global.searchListSessions = new Map();
-if (!global.downloadSessions) global.downloadSessions = new Map();
+if (!global.thenkiriListSessions) global.thenkiriListSessions = new Map();
+if (!global.thenkiriDlSessions) global.thenkiriDlSessions = new Map();
 
 function cleanSearchTitle(rawTitle) {
     return rawTitle
@@ -50,9 +49,17 @@ async function fetchMediaDetails(cleanTitle) {
     return null;
 }
 
-function getQuotedMessageId(mek) {
-    return mek.message?.extendedTextMessage?.contextInfo?.stanzaId || 
-           mek.message?.imageMessage?.contextInfo?.stanzaId || null;
+// Universal Context Info Stanza Extractor
+function extractQuotedId(mek) {
+    try {
+        const ctx = mek.message?.extendedTextMessage?.contextInfo || 
+                    mek.message?.imageMessage?.contextInfo || 
+                    mek.message?.videoMessage?.contextInfo || 
+                    mek.message?.documentMessage?.contextInfo;
+        return ctx?.stanzaId || ctx?.id || null;
+    } catch (e) {
+        return null;
+    }
 }
 
 // ==========================================
@@ -66,7 +73,7 @@ cmd({
     filename: __filename
 }, async (conn, mek, m, { from, args }) => {
     if (!args || args.length === 0) {
-        return conn.sendMessage(from, { text: "⚠️ Please enter a movie or TV show name!\n*Example:* `.thenkiri game of thrones`" }, { quoted: mek });
+        return conn.sendMessage(from, { text: "⚠️ Please enter a movie or TV show name!\n*Example:* `.tv game of thrones`" }, { quoted: mek });
     }
 
     const searchQuery = args.join(' ');
@@ -90,9 +97,10 @@ cmd({
 
         const sentSearchMsg = await conn.sendMessage(from, { text: listText }, { quoted: mek });
 
-        // Save Search Session mapped specifically to Message ID
-        global.searchListSessions.set(sentSearchMsg.key.id, {
+        // Bind Session to Sent Message ID
+        global.thenkiriListSessions.set(sentSearchMsg.key.id, {
             results: tkResults,
+            chatJid: from,
             timestamp: Date.now()
         });
 
@@ -102,7 +110,7 @@ cmd({
 });
 
 // ==========================================
-// 2. MULTI-REPLY LISTENER
+// 2. REPLY LISTENER (MULTI-SELECTION & DOWNLOAD)
 // ==========================================
 cmd({
     on: "body"
@@ -113,23 +121,21 @@ cmd({
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
-        const quotedId = getQuotedMessageId(mek);
-        if (!quotedId) return;
-
+        const quotedId = extractQuotedId(mek);
         const choiceNum = parseInt(textMsg);
         const choiceIndex = choiceNum - 1;
 
-        // --- CASE 1: REPLYING TO SEARCH LIST MESSAGE ---
-        if (global.searchListSessions.has(quotedId)) {
-            const session = global.searchListSessions.get(quotedId);
+        // --- STAGE 1: REPLY TO MOVIE SEARCH LIST ---
+        if (quotedId && global.thenkiriListSessions.has(quotedId)) {
+            const listSession = global.thenkiriListSessions.get(quotedId);
 
-            // 15-minute validity for the list
-            if (Date.now() - session.timestamp > 900000) {
-                global.searchListSessions.delete(quotedId);
+            // Timeout after 30 minutes
+            if (Date.now() - listSession.timestamp > 1800000) {
+                global.thenkiriListSessions.delete(quotedId);
                 return conn.sendMessage(from, { text: "⚠️ Search list expired. Please search again." }, { quoted: mek });
             }
 
-            const tkResults = session.results;
+            const tkResults = listSession.results;
 
             if (choiceIndex >= 0 && choiceIndex < tkResults.length) {
                 const selectedMovie = tkResults[choiceIndex];
@@ -179,7 +185,7 @@ cmd({
                 captionText += `🎬 *Trailer:* ${trailerLink}\n`;
                 captionText += `----------------------------------------\n\n`;
                 captionText += `📥 *Select Quality / Episode to Download:*\n\n`;
-                captionText += `*0.* 📦 *ALL EPISODES / QUALITIES (DOWNLOAD ALL)*\n\n`;
+                captionText += `*0.* 📦 *ALL EPISODES / QUALITIES (AUTO DOWNLOAD ALL)*\n\n`;
 
                 options.forEach((opt, idx) => {
                     const qName = opt.quality || opt.name || `Episode ${idx + 1}`;
@@ -188,15 +194,22 @@ cmd({
 
                 captionText += `\n> ${FOOTER}`;
 
-                await conn.sendMessage(from, { text: "✅ *Details Fetched! Reply to the image below with quality number.*", edit: statusMsg.key });
+                await conn.sendMessage(from, { text: "✅ *Details Fetched! Reply to the message below with the episode/quality number.*", edit: statusMsg.key });
 
-                let sentDlMsg = await conn.sendMessage(from, {
-                    image: { url: posterImg },
-                    caption: captionText
-                }, { quoted: mek });
+                let sentDlMsg;
+                try {
+                    sentDlMsg = await conn.sendMessage(from, {
+                        image: { url: posterImg },
+                        caption: captionText
+                    }, { quoted: mek });
+                } catch (e) {
+                    sentDlMsg = await conn.sendMessage(from, {
+                        text: captionText
+                    }, { quoted: mek });
+                }
 
-                // Save Download Session separately per Poster Message ID
-                global.downloadSessions.set(sentDlMsg.key.id, {
+                // Bind Download Session to Poster Message ID
+                global.thenkiriDlSessions.set(sentDlMsg.key.id, {
                     options: options,
                     movieTitle: title,
                     timestamp: Date.now()
@@ -205,12 +218,12 @@ cmd({
             return;
         }
 
-        // --- CASE 2: REPLYING TO POSTER/QUALITY MESSAGE ---
-        if (global.downloadSessions.has(quotedId)) {
-            const dlSession = global.downloadSessions.get(quotedId);
+        // --- STAGE 2: REPLY TO POSTER / QUALITY LIST ---
+        if (quotedId && global.thenkiriDlSessions.has(quotedId)) {
+            const dlSession = global.thenkiriDlSessions.get(quotedId);
             const options = dlSession.options;
 
-            // 0: Download All
+            // Option 0: Download All
             if (choiceNum === 0) {
                 await conn.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) items...*` }, { quoted: mek });
 
@@ -240,7 +253,7 @@ cmd({
                 return;
             }
 
-            // Specific Item Download
+            // Individual Episode / Quality Selection
             if (choiceIndex >= 0 && choiceIndex < options.length) {
                 const selectedOption = options[choiceIndex];
                 const dlStatus = await conn.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: mek });
@@ -276,6 +289,6 @@ cmd({
         }
 
     } catch (err) {
-        console.error("Multi-reply Listener Error:", err);
+        console.error("Thenkiri Reply Listener Error:", err);
     }
 });
