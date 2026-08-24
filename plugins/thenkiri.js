@@ -4,7 +4,7 @@ const axios = require('axios');
 
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
-const DEFAULT_POSTER = "https://files.catbox.moe/uqofdi.jpg"; // Working Fallback Image
+const DEFAULT_POSTER = "https://files.catbox.moe/uqofdi.jpg";
 
 if (!global.thenkiriSessions) global.thenkiriSessions = new Map();
 if (!global.processedMsgIds) global.processedMsgIds = new Set();
@@ -61,6 +61,11 @@ cmd({
         return socket.sendMessage(from, { text: "⚠️ Please enter a movie or TV show name!" }, { quoted: msg });
     }
 
+    // ALWAYS CLEAR PREVIOUS SESSION ON NEW SEARCH
+    if (global.thenkiriSessions.has(from)) {
+        global.thenkiriSessions.delete(from);
+    }
+
     const searchQuery = args.join(' ');
 
     try {
@@ -80,11 +85,13 @@ cmd({
 
         listText += `\n> ${FOOTER}`;
 
-        await socket.sendMessage(from, { text: listText }, { quoted: msg });
+        const sentMsg = await socket.sendMessage(from, { text: listText }, { quoted: msg });
 
+        // Save session with search message ID for validation
         global.thenkiriSessions.set(from, {
             step: 'SELECTION',
             results: tkResults,
+            msgId: sentMsg.key.id,
             timestamp: Date.now()
         });
 
@@ -93,7 +100,7 @@ cmd({
     }
 });
 
-// THENKIRI REPLY LISTENER WITH ANTI-DUPLICATE MSG LOCK
+// THENKIRI REPLY LISTENER
 cmd({
     on: "body"
 },
@@ -102,26 +109,24 @@ async (socket, msg, m, { from, body, isCmd }) => {
         if (isCmd) return;
         if (!global.thenkiriSessions.has(from)) return;
 
-        // Prevent Duplicate Trigger using Message ID
         const msgId = msg.key.id;
         if (global.processedMsgIds.has(msgId)) return;
         global.processedMsgIds.add(msgId);
-
         if (global.processedMsgIds.size > 100) global.processedMsgIds.clear();
 
         const session = global.thenkiriSessions.get(from);
         const textMsg = body ? body.trim() : "";
         if (textMsg === "" || isNaN(textMsg)) return;
 
-        // 5 Minutes Session Timeout
-        if (Date.now() - session.timestamp > 300000) {
+        // Session Timeout (3 Minutes)
+        if (Date.now() - session.timestamp > 180000) {
             global.thenkiriSessions.delete(from);
             return;
         }
 
         const selectedNum = parseInt(textMsg);
 
-        // STEP 1: MOVIE / TV SHOW SELECTION
+        // STEP 1: MOVIE / TV SHOW SELECTION FROM SEARCH LIST
         if (session.step === 'SELECTION') {
             const choiceIndex = selectedNum - 1;
             const tkResults = session.results;
@@ -186,23 +191,25 @@ async (socket, msg, m, { from, body, isCmd }) => {
 
             await socket.sendMessage(from, { text: "✅ *Details Fetched!*", edit: statusMsg.key });
 
-            // Send Poster with Safe Fallback Catch
+            let dlMsg;
             try {
-                await socket.sendMessage(from, {
+                dlMsg = await socket.sendMessage(from, {
                     image: { url: posterImg },
                     caption: captionText
                 }, { quoted: msg });
             } catch (imgErr) {
-                await socket.sendMessage(from, {
+                dlMsg = await socket.sendMessage(from, {
                     image: { url: DEFAULT_POSTER },
                     caption: captionText
                 }, { quoted: msg });
             }
 
+            // Update session state for Step 2
             global.thenkiriSessions.set(from, {
                 step: 'DOWNLOAD',
                 options: options,
                 movieTitle: title,
+                msgId: dlMsg.key.id,
                 timestamp: Date.now()
             });
         } 
@@ -210,10 +217,11 @@ async (socket, msg, m, { from, body, isCmd }) => {
         // STEP 2: DOWNLOAD HANDLING
         else if (session.step === 'DOWNLOAD') {
             const options = session.options;
+            
+            // Delete session instantly so it will NOT overlap with next commands
+            global.thenkiriSessions.delete(from);
 
-            // OPTION 0: AUTO DOWNLOAD ALL EPISODES
             if (selectedNum === 0) {
-                global.thenkiriSessions.delete(from); // Clear session only on download all
                 await socket.sendMessage(from, { text: `📦 *Downloading ALL (${options.length}) Episodes/Files... Please wait!*` }, { quoted: msg });
 
                 for (let i = 0; i < options.length; i++) {
@@ -241,14 +249,9 @@ async (socket, msg, m, { from, body, isCmd }) => {
                 }
                 await socket.sendMessage(from, { text: `✅ *ALL (${options.length}) Files Processed!*` }, { quoted: msg });
             } 
-            // INDIVIDUAL EPISODE SELECTION
             else {
                 const choiceIndex = selectedNum - 1;
                 if (choiceIndex >= 0 && choiceIndex < options.length) {
-                    // Update timestamp so user can select another episode without expiring
-                    session.timestamp = Date.now();
-                    global.thenkiriSessions.set(from, session);
-
                     const selectedOption = options[choiceIndex];
                     const dlStatusMsg = await socket.sendMessage(from, { text: `⚡ *Downloading & Uploading File...*` }, { quoted: msg });
 
@@ -259,7 +262,7 @@ async (socket, msg, m, { from, body, isCmd }) => {
                     } else {
                         const qName = selectedOption.quality || selectedOption.name || 'Download File';
                         const safeFileName = `${session.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
-                        const caption = `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n💡 *Tip:* You can reply with another number (e.g. 4, 7) to download more episodes!\n\n> ${FOOTER}`;
+                        const caption = `🍿 *${session.movieTitle}*\n📌 *Quality/Episode:* ${qName}\n\n> ${FOOTER}`;
 
                         try {
                             await socket.sendMessage(from, {
