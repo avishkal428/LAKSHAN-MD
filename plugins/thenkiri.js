@@ -6,7 +6,6 @@ const axios = require('axios');
 const TMDB_API_KEY = "267e38d9f7dd69a9f609d281ed878515";
 const FOOTER = "© 𝙿𝙾𝚆𝙴𝚁𝙴𝙳 𝙱𝚈 𝙻𝙰𝙺𝚂𝙷𝙰𝙽-𝙼𝙳";
 
-// Memory maps using User JID (Sender) instead of Message ID to prevent quote mismatches
 if (!global.userState) global.userState = new Map();
 
 function cleanSearchTitle(rawTitle) {
@@ -85,7 +84,6 @@ cmd({
 
         await conn.sendMessage(from, { text: listText }, { quoted: mek });
 
-        // Save session directly to User ID
         global.userState.set(userId, {
             step: 'MOVIE_LIST',
             results: tkResults,
@@ -197,12 +195,11 @@ cmd({
                     }, { quoted: mek });
                 }
 
-                // UPDATE STATE TO QUALITY_LIST (Retain movie results so user can re-select if needed)
                 global.userState.set(userId, {
                     step: 'QUALITY_LIST',
                     options: options,
                     movieTitle: title,
-                    previousResults: tkResults, // Save list so user can go back or choose another
+                    previousResults: tkResults,
                     timestamp: Date.now()
                 });
             }
@@ -215,7 +212,6 @@ cmd({
 
             // Option 0: Download All
             if (choiceNum === 0) {
-                // Switch state back to MOVIE_LIST so old list can still be used
                 global.userState.set(userId, {
                     step: 'MOVIE_LIST',
                     results: state.previousResults,
@@ -227,40 +223,49 @@ cmd({
                 for (let i = 0; i < options.length; i++) {
                     const opt = options[i];
                     const qName = opt.quality || opt.name || `Episode ${i + 1}`;
-                    const finalDirectLink = await scraperThenkiri.bypassDownloadwella(opt.link);
-
-                    if (finalDirectLink) {
-                        const safeFileName = `${state.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
-
-                        try {
-                            await conn.sendMessage(from, {
-                                document: { url: finalDirectLink },
-                                mimetype: 'video/x-matroska',
-                                fileName: safeFileName,
-                                caption: `🍿 *${state.movieTitle}*\n📌 *Item:* ${qName}\n\n> ${FOOTER}`
-                            }, { quoted: mek });
-                        } catch (e) {
-                            await conn.sendMessage(from, {
-                                text: `🍿 *${state.movieTitle}*\n📌 *Item:* ${qName}\n🔗 *Direct Link:*\n${finalDirectLink}`
-                            }, { quoted: mek });
-                        }
+                    
+                    let finalDirectLink = null;
+                    try {
+                        finalDirectLink = await scraperThenkiri.bypassDownloadwella(opt.link);
+                    } catch (e) {
+                        finalDirectLink = opt.link;
                     }
+
+                    if (!finalDirectLink) finalDirectLink = opt.link;
+
+                    const safeFileName = `${state.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
+
+                    try {
+                        await conn.sendMessage(from, {
+                            document: { url: finalDirectLink },
+                            mimetype: 'video/x-matroska',
+                            fileName: safeFileName,
+                            caption: `🍿 *${state.movieTitle}*\n📌 *Item:* ${qName}\n\n> ${FOOTER}`
+                        }, { quoted: mek });
+                    } catch (e) {
+                        await conn.sendMessage(from, {
+                            text: `🍿 *${state.movieTitle}*\n📌 *Item:* ${qName}\n🔗 *Direct Link:*\n${finalDirectLink}`
+                        }, { quoted: mek });
+                    }
+
                     if (sleep) await sleep(3000);
                 }
                 return;
             }
 
-            // Single Episode/Quality Selection
+            // Single Quality/Episode Selection
             if (choiceIndex >= 0 && choiceIndex < options.length) {
                 const selectedOption = options[choiceIndex];
                 const dlStatus = await conn.sendMessage(from, { text: `⚡ *Downloading File...*` }, { quoted: mek });
 
-                const finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
-
-                if (!finalDirectLink) {
-                    await conn.sendMessage(from, { text: `❌ Link bypass failed.`, edit: dlStatus.key });
-                    return;
+                let finalDirectLink = null;
+                try {
+                    finalDirectLink = await scraperThenkiri.bypassDownloadwella(selectedOption.link);
+                } catch (e) {
+                    finalDirectLink = selectedOption.link;
                 }
+
+                if (!finalDirectLink) finalDirectLink = selectedOption.link;
 
                 const qName = selectedOption.quality || selectedOption.name || 'File';
                 const safeFileName = `${state.movieTitle.replace(/[/\\?%*:|"<>]/g, "")}_${qName.replace(/\s+/g, '_')}.mkv`;
@@ -283,7 +288,6 @@ cmd({
                     await conn.sendMessage(from, { text: "✅ *Link Sent*", edit: dlStatus.key });
                 }
 
-                // Switch state back to MOVIE_LIST so user can choose another movie from initial list
                 global.userState.set(userId, {
                     step: 'MOVIE_LIST',
                     results: state.previousResults,
