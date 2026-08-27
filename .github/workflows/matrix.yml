@@ -28,7 +28,4 @@ jobs:
       run: npm install
 
     - name: Start application
-      run: npm start&
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+      run: npm start
